@@ -1439,7 +1439,7 @@ void orcus_clear_function(orcus_function* in) {
 
 inline const char* m_get_opcode_str(orcus_opcode instruction) {
 
-	if (instruction > ORCUS_OPCODE_GET_KCS) {
+	if (instruction > ORCUS_OPCODE_MSET) {
 		return "????";
 	}
 	static const char* lookup[0xFFFF] = {
@@ -1529,6 +1529,8 @@ inline const char* m_get_opcode_str(orcus_opcode instruction) {
 		"GENV_KCS", //69
 		"SET_KCS", //70
 		"GET_KCS", //71
+
+		"MSET", //72
 	};
 	return lookup[instruction];
 }
@@ -1644,6 +1646,13 @@ orcus_string* orcus_get_bytecode_debug(orcus_function* F) {
 				orcus_mstring_addchars(out, (char*)"\"", 1);
 				}
 				break;
+			case ORCUS_OPCODE_MSET:
+			{
+				orcus_int size = *(orcus_int*)(F->instructions + offset);
+				snprintf(buffer, 0x2FFF, " elements:%zi ", size);
+				orcus_mstring_addchars(out, buffer, strlen(buffer));
+				offset += ORCUS_INSTRUCTIONS_PER_VARIABLE_SIZE;
+			}
 		}
 
 		orcus_mstring_addchars(out,(char*)"\n",1);

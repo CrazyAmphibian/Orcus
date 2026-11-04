@@ -97,6 +97,8 @@ void ORCUS_BYTECODE_GENV_KCS(orcus_state* const ORCUS_CPP_restrict M);
 void ORCUS_BYTECODE_SET_KCS(orcus_state* const ORCUS_CPP_restrict M);
 void ORCUS_BYTECODE_GET_KCS(orcus_state* const ORCUS_CPP_restrict M);
 
+void ORCUS_BYTECODE_MSET(orcus_state* const ORCUS_CPP_restrict M);
+
 extern orcus_instruction orcus_bytecode_list[];
 
 
@@ -187,4 +189,6 @@ enum orcus_opcodes:orcus_opcode {
 	ORCUS_OPCODE_GENV_KCS = 69,
 	ORCUS_OPCODE_SET_KCS = 70,
 	ORCUS_OPCODE_GET_KCS = 71,
+
+	ORCUS_OPCODE_MSET = 72,
 };

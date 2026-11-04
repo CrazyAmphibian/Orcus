@@ -2165,6 +2165,45 @@ void ORCUS_BYTECODE_GET_KCS(orcus_state* const ORCUS_CPP_restrict M) {
 	table->type = ORCUS_TYPE_NIL;
 }
 
+void ORCUS_BYTECODE_MSET(orcus_state* const ORCUS_CPP_restrict M) { //Multi SET variables
+	const orcus_int number = *(orcus_int*)(M->bytecode->instructions + M->programcounter);
+	M->programcounter += ORCUS_INSTRUCTIONS_PER_VARIABLE_SIZE;
+
+	if (M->sizeofstack < (number * 2) + 1) {
+		orcus_raise_error(M, ORCUS_ERROR_STACK_CORRUPT);
+		return;
+	}
+
+	orcus_variable* storage_var = M->stack + M->sizeofstack - 1;
+
+	orcus_int n;
+
+	switch (storage_var->type) {
+	case ORCUS_TYPE_TABLE:
+		for (n = 0; n < number; n++) {
+			orcus_setkey((orcus_table*)storage_var->data.p, storage_var - (n*2) -1, storage_var - (n * 2) - 2);
+		}
+		break;
+	case ORCUS_TYPE_ARRAY:
+		for (n = 0; n < number; n++) {
+			orcus_variable* key = storage_var - (n * 2) - 1;
+			if (key->type != ORCUS_TYPE_INT) {
+				orcus_raise_error_nonpointer(M, ORCUS_ERROR_INVALID_INDEX, key->type);
+				return;
+			}
+			orcus_setarray((orcus_array*)storage_var->data.p, storage_var - (n * 2) - 2 , key->data.i);
+			orcus_release_var(key);
+		}
+		break;
+	default:
+		orcus_raise_error_firstargpointeronly(M, ORCUS_ERROR_WRONG_TYPE_EXPECTS_ANY_STORAGETYPE_VARIABLEPROVIDED, &storage_var, 1);
+		return;
+	}
+
+	M->sizeofstack -= number * 2;
+	M->stack[M->sizeofstack - 1] = *storage_var; //keep the array/table on the stack
+}
+
 
 orcus_instruction orcus_bytecode_list[] = {
 	ORCUS_BYTECODE_NOP, //0
@@ -2254,5 +2293,7 @@ orcus_instruction orcus_bytecode_list[] = {
 	ORCUS_BYTECODE_GENV_KCS,
 	ORCUS_BYTECODE_SET_KCS,
 	ORCUS_BYTECODE_GET_KCS, //71
+
+	ORCUS_BYTECODE_MSET, //72
 };
 

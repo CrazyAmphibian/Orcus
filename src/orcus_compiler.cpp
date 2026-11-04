@@ -1315,8 +1315,9 @@ orcus_int m_compile_read_variable(compiler_function* f, compiler_token* tokens,o
 		
 		bool is_array = cur_tok->chars[0]=='[';
 		orcus_int implicit_position=0;
+		orcus_int elements_set = 0;
 			
-		add_instruction(f,is_array? ORCUS_OPCODE_NARR : ORCUS_OPCODE_NTAB,token_offset);
+		
 		token_offset++;
 
 		while(true){ //the ticky thing about tables and arrays is how many syntax options we have. [1,2,3], [1=1,2=2,3=3]
@@ -1329,9 +1330,15 @@ orcus_int m_compile_read_variable(compiler_function* f, compiler_token* tokens,o
 				
 			//exit at closing symbol.
 			if( (cur_tok->token_flags & TOKEN_OPERATOR) && cur_tok->num_chars==1 && cur_tok->chars[0]== (is_array ? ']' : '}') ){
+				add_instruction(f, is_array ? ORCUS_OPCODE_NARR : ORCUS_OPCODE_NTAB, token_offset);
+				if (elements_set) {
+					add_instruction(f,ORCUS_OPCODE_MSET,token_offset);
+					add_rawdata_bitwidth_size(f, elements_set, token_offset);
+				}
 				token_offset++;
 				break;
 			}
+			elements_set++;
 				
 			//read a variable. this could be implicit index value or an index.
 			compiler_function idxfunc;
@@ -1357,7 +1364,7 @@ orcus_int m_compile_read_variable(compiler_function* f, compiler_token* tokens,o
 				
 			if(cur_tok->token_flags & TOKEN_OPERATOR && cur_tok->num_chars==1){
 				if(cur_tok->chars[0]=='='){ //explicit index
-					add_instruction(f,ORCUS_OPCODE_CPYT,token_offset);
+					//add_instruction(f,ORCUS_OPCODE_CPYT,token_offset);
 					
 					
 
@@ -1368,7 +1375,7 @@ orcus_int m_compile_read_variable(compiler_function* f, compiler_token* tokens,o
 					orcus_int o= m_compile_read_var_statment(f,tokens,num_tokens,token_offset,i);
 					i->args_out = oao;
 					
-					add_instruction(f, ORCUS_OPCODE_SWPT, token_offset);
+					//add_instruction(f, ORCUS_OPCODE_SWPT, token_offset);
 
 					merge_compiler_functions_nofree(f, &idxfunc);
 					clear_compiler_function(&idxfunc);
@@ -1381,7 +1388,7 @@ orcus_int m_compile_read_variable(compiler_function* f, compiler_token* tokens,o
 						return 0;
 					}
 						
-					add_instruction(f,ORCUS_OPCODE_SET,token_offset);
+					//add_instruction(f,ORCUS_OPCODE_SET,token_offset);
 					token_offset += o;
 					cur_tok=m_compile_get_next_token(tokens,num_tokens,token_offset);
 						
@@ -1398,18 +1405,18 @@ orcus_int m_compile_read_variable(compiler_function* f, compiler_token* tokens,o
 					}
 					if(cur_tok->chars[0] == ',')token_offset++;
 				}else if(cur_tok->chars[0]==',' || is_array ? ']' : '}'){ //implicit index
-					add_instruction(f,ORCUS_OPCODE_CPYT,token_offset);
+					//add_instruction(f,ORCUS_OPCODE_CPYT,token_offset);
 					
 					merge_compiler_functions_nofree(f, &idxfunc);
 					clear_compiler_function(&idxfunc);
 
-					add_instruction(f, ORCUS_OPCODE_SWPT, token_offset);
+					//add_instruction(f, ORCUS_OPCODE_SWPT, token_offset);
 
 					add_instruction(f,ORCUS_OPCODE_NINT,token_offset);
 					add_rawdata_bitwidth_size(f,*(binarydata*)&implicit_position,token_offset);
 					implicit_position++;
 
-					add_instruction(f,ORCUS_OPCODE_SET,token_offset);
+					//add_instruction(f,ORCUS_OPCODE_SET,token_offset);
 					if(cur_tok->chars[0] == ',')token_offset++;
 				}else{
 					f->errorcode=ORCUS_COMPERR_WRONG_SYMBOL;
