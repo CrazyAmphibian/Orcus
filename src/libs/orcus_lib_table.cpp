@@ -81,7 +81,7 @@ void orcus_lib_table_flush(orcus_state* const ORCUS_CPP_restrict M, const orcus_
 		orcus_int subtracted_size = 0;
 		for (orcus_int i = 0; i < st.size; i++) { //for each value
 			if (!st.values[i].type) { //that is nil
-				for (orcus_int i2 = (st.size- subtracted_size); i2 > i; i2--) { //look through each value, start high
+				for (orcus_int i2 = (st.size- subtracted_size - 1); i2 > i; i2--) { //look through each value, start high
 					if (st.values[i2].type) { //then go lower to find a non-nil value
 						st.values[i] = st.values[i2];
 						orcus_decrement_variable_refrence_count(st.keys+i);  //if we do, place the value at our position, and free our key
