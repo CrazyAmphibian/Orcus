@@ -89,3 +89,52 @@ if string.copy(str)!=str then
 	print("string.copy made a string that didn't match the original!")
 	return 1
 end
+
+local str_in="12,14,23,100,"
+local nstr=string.match(str_in,",",function(original,substring,start,finish)
+	if start>5 then
+		return "| "
+	end
+	return "*"..substring.."*"
+end)
+if nstr!="12*,*14*,*23| 100| " then
+	print("string.match test failed!")
+	return 1
+end
+
+nstr=string.pmatch(str_in,"%n",function(original,substring,start,finish)
+	if substring=="1" || (substring=="2") then
+		return "?"
+	end
+	return "["..substring.."]"
+end)
+if nstr!="??,?[4],?[3],?[0][0]," then
+	print("string.pmatch test failed!")
+	return 1
+end
+
+if string.repeat("?",20) != (string.repeat("?",10)..string.repeat("?",10)) then
+	print("string.repeat test 1 failed!")
+	return 1
+end
+if string.repeat("12",5) != "1212121212" then
+	print("string.repeat test 2 failed!")
+	return 1
+end
+
+
+//prepending string
+if string.setchars("TEST TEST","NNNNN",-3) != "NNNNNST TEST" then
+	print("string.setchars test 1 failed!")
+	return 1
+end
+//replacing string
+if string.setchars("TEST TEST","NNNNN",3) != "TESNNNNNT" then
+	print("string.setchars test 2 failed!")
+	return 1
+end
+//appending string
+if string.setchars("TEST TEST","NNNNN",7) != "TEST TENNNNN" then
+	print("string.setchars test 3 failed!")
+	return 1
+end
