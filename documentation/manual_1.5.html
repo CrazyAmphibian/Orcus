@@ -336,6 +336,24 @@
 <br>
 
 <div>
+	<h3 class="function"><span class="type">bool</span> setworkingdir ( <span class="type">string</span> path )</h3>
+	
+	<p>
+		attempts to set the executable's working directory to the provided path.<br>
+		returns a boolean to if it was successful<br>
+		if the directory does not exist, it will not work<br>
+		supports relative pathing<br>
+	</p>
+	
+	<p class="codeblock">
+		print(io.getworkingdir()) //might be "C:\Users\user\Desktop\program" or "/home/user/desktop/program"<br>
+		io.setworkingdir("../otherprogram")<br>
+		print(io.getworkingdir()) //might be "C:\Users\user\Desktop\otherprogram" or "/home/user/desktop/otherprogram"<br>
+	</p>
+</div>
+<br>
+
+<div>
 	<h3 class="function"><span class="type">string</span> getexecutabledir ( )</h3>
 	
 	<p>

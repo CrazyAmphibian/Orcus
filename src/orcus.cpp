@@ -1914,6 +1914,7 @@ static void __attribute__((constructor)) dynamic_lib_load() {
 	orcus_register_library(orcus_lib_io_serialize, "serialize", "io");
 	orcus_register_library(orcus_lib_io_deserialize, "deserialize", "io");
 	orcus_register_library(orcus_lib_io_cwd, "getworkingdir", "io");
+	orcus_register_library(orcus_lib_io_set_cwd, "setworkingdir", "io");
 	orcus_register_library(orcus_lib_io_executabledirectory, "getexecutabledir", "io");
 	orcus_register_library(orcus_lib_io_userdirectory, "getuserdir", "io");
 	orcus_register_library(orcus_lib_io_filelength, "size", "io");

@@ -26,4 +26,5 @@ void orcus_lib_io_cwd(orcus_state* const ORCUS_CPP_restrict M, const orcus_int a
 void orcus_lib_io_executabledirectory(orcus_state* const ORCUS_CPP_restrict M, const orcus_int args_in, const orcus_int args_out);
 void orcus_lib_io_filelength(orcus_state* const ORCUS_CPP_restrict M, const orcus_int args_in, const orcus_int args_out);
 void orcus_lib_io_userdirectory(orcus_state* const ORCUS_CPP_restrict M, const orcus_int args_in, const orcus_int args_out);
+void orcus_lib_io_set_cwd(orcus_state* const ORCUS_CPP_restrict M, const orcus_int args_in, const orcus_int args_out);
 

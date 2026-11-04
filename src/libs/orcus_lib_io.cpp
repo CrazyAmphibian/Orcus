@@ -1736,3 +1736,47 @@ void orcus_lib_io_userdirectory(orcus_state* const ORCUS_CPP_restrict M, const o
 
 	ORCUS_CFUNCTION_ENSURE_CORRECT_NUMBER_OUTPUT_ARGS(M, args_out, 1);
 }
+
+
+
+void orcus_lib_io_set_cwd(orcus_state* const ORCUS_CPP_restrict M, const orcus_int args_in, const orcus_int args_out) {
+	if (ORCUS_CFUNCTION_ENSURE_CORRECT_NUMBER_INPUT_ARGS(M, args_in, 1)) {
+		return;
+	}
+
+	orcus_variable pathvar;
+	orcus_popstack(M,&pathvar);
+
+	if (pathvar.type != ORCUS_TYPE_STRING) {
+		orcus_raise_error_firstargpointeronly(M, ORCUS_ERROR_WRONG_TYPE_VARIABLEPROVIDED, &pathvar, ORCUS_TYPE_STRING, 1);
+		orcus_release_var(&pathvar);
+		return;
+	}
+
+	char* cstring = orcus_mstring_to_cstring((orcus_string*)pathvar.data.p);
+
+	if (!cstring) {
+		orcus_raise_error(M, ORCUS_ERROR_ALLOCATION);
+		orcus_release_var(&pathvar);
+		return;
+	}
+
+	bool success = false;
+
+#ifdef _WIN32
+	success = _chdir(cstring) == 0;
+#else
+	success = chdir(cstring) == 0;
+#endif
+
+	free(cstring);
+	orcus_release_var(&pathvar);
+
+	if (args_out) {
+		pathvar.type = ORCUS_TYPE_BOOL;
+		pathvar.data.i = success ? 1 : 0;
+		orcus_pushstack(M, &pathvar);
+	}
+
+	ORCUS_CFUNCTION_ENSURE_CORRECT_NUMBER_OUTPUT_ARGS(M, args_out, 1);
+}
