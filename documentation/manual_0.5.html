@@ -75,10 +75,10 @@
 	
 	<table class="tablefirstcollummono">
 		<tr><th>symbol</th> <th>operation</th> <th>type</th> <th>comments</th></tr>
-		<tr><td>&&</td> <td>logical and</td> <td>binary</td> <td>if true, returns the right-hand (second) arg, otherwise false. cannot be used for self-modification.</td></tr>
-		<tr><td>||</td> <td>logical or</td> <td>binary</td> <td>if true, returns the left-hand (first) arg, otherwise returns the right hand (second) arg. cannot be used for self-modification.</td></tr>
-		<tr><td>~~</td> <td>logical xor</td> <td>binary</td> <td>if true, returns the true arg, otherwise returns false. cannot be used for self-modification.</td></tr>
-		<tr><td>!!</td> <td>logical not</td> <td>unary</td> <td>always returns a boolean type.</td></tr>
+		<tr><td>&&</td> <td>logical and</td> <td>binary</td> <td>if the first arg is true, returns the second arg. otherwise, returns the first arg.</td></tr>
+		<tr><td>||</td> <td>logical or</td> <td>binary</td> <td>if the first arg is true, returns the first arg. otherwise. returns the second arg.</td></tr>
+		<tr><td>~~</td> <td>logical xor</td> <td>binary</td> <td>if only one arg is true, it is returned. otherise, returns false.</td></tr>
+		<tr><td>!!</td> <td>logical not</td> <td>unary</td> <td>always returns a boolean type inverse of the boolean evaluation of the supplied value.</td></tr>
 
 	</table>
 </div>

@@ -462,9 +462,6 @@ void ORCUS_BYTECODE_LAND(orcus_state* const ORCUS_CPP_restrict M) {
 	}
 	else {
 		orcus_release_var(st);
-		orcus_release_var(ss);
-		ss->data.i = 0;
-		ss->type = ORCUS_TYPE_BOOL;
 	}
 
 	M->sizeofstack--;
@@ -486,16 +483,8 @@ void ORCUS_BYTECODE_LOR(orcus_state* const ORCUS_CPP_restrict M) {
 		orcus_release_var(st);
 	}
 	else {
-		if (c1) {
-			orcus_release_var(ss);
-			*ss = *st;
-		}
-		else {
-			orcus_release_var(st);
-			orcus_release_var(ss);
-			ss->data.i = 0;
-			ss->type = ORCUS_TYPE_BOOL;
-		}
+		orcus_release_var(ss);
+		*ss = *st;
 	}
 
 	M->sizeofstack--;
