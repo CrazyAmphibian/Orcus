@@ -461,7 +461,13 @@ void ORCUS_BYTECODE_LAND(orcus_state* const ORCUS_CPP_restrict M) {
 		*ss = *st;
 	}
 	else {
-		orcus_release_var(st);
+		if (c1) {
+			orcus_release_var(st);
+		}
+		else {
+			orcus_release_var(ss);
+			*ss = *st;
+		}
 	}
 
 	M->sizeofstack--;
