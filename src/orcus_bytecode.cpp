@@ -1256,6 +1256,8 @@ void ORCUS_BYTECODE_CALL(orcus_state* const ORCUS_CPP_restrict M) { //CALL funct
 	}
 	orcus_release_var(&ck);
 
+	if (M->errorcode)return;
+
 	if (initial_stack_size + args_out - args_in - 1 !=M->sizeofstack) {
 		orcus_raise_error(M, ORCUS_ERROR_STACK_CORRUPT);
 		return;
