@@ -1841,6 +1841,10 @@ static void __attribute__((constructor)) dynamic_lib_load() {
 	orcus_register_library(orcus_lib_math_min_array, "amin", "math");
 	orcus_register_library(orcus_lib_math_mean, "mean", "math");
 	orcus_register_library(orcus_lib_math_mean_array, "amean", "math");
+	orcus_register_library(orcus_lib_math_stddev, "stddev", "math");
+	orcus_register_library(orcus_lib_math_stddev_array, "astddev", "math");
+	orcus_register_library(orcus_lib_math_median, "median", "math");
+	orcus_register_library(orcus_lib_math_median_array, "amedian", "math");
 
 	orcus_register_library((void*)&orcus_math_pi, "pi", "math", ORCUS_TYPE_FLOAT);
 	orcus_register_library((void*)&orcus_math_root2, "root2", "math", ORCUS_TYPE_FLOAT);

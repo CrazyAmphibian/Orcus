@@ -824,6 +824,7 @@ void orcus_lib_math_min_array(orcus_state* const ORCUS_CPP_restrict M, const orc
 	if (in.type != ORCUS_TYPE_ARRAY) {
 		orcus_raise_error_firstargpointeronly(M, ORCUS_ERROR_WRONG_TYPE_VARIABLEPROVIDED, &in, ORCUS_TYPE_ARRAY, 1);
 		orcus_release_var(&in);
+		return;
 	}
 
 	orcus_variable out;
@@ -919,6 +920,7 @@ void orcus_lib_math_max_array(orcus_state* const ORCUS_CPP_restrict M, const orc
 	if (in.type != ORCUS_TYPE_ARRAY) {
 		orcus_raise_error_firstargpointeronly(M, ORCUS_ERROR_WRONG_TYPE_VARIABLEPROVIDED, &in, ORCUS_TYPE_ARRAY, 1);
 		orcus_release_var(&in);
+		return;
 	}
 
 	orcus_variable out;
@@ -1048,6 +1050,7 @@ void orcus_lib_math_mean_array(orcus_state* const ORCUS_CPP_restrict M, const or
 	if (in.type != ORCUS_TYPE_ARRAY) {
 		orcus_raise_error_firstargpointeronly(M, ORCUS_ERROR_WRONG_TYPE_VARIABLEPROVIDED, &in, ORCUS_TYPE_ARRAY, 1);
 		orcus_release_var(&in);
+		return;
 	}
 
 	orcus_variable out;
@@ -1117,6 +1120,438 @@ void orcus_lib_math_mean_array(orcus_state* const ORCUS_CPP_restrict M, const or
 	orcus_release_var(&in);
 
 	orcus_pushstack(M, &out);
+
+	ORCUS_CFUNCTION_ENSURE_CORRECT_NUMBER_OUTPUT_ARGS(M, args_out, 1);
+}
+
+
+
+void orcus_lib_math_stddev(orcus_state* const ORCUS_CPP_restrict M, const orcus_int args_in, const orcus_int args_out) {
+	if (!args_out) {
+		ORCUS_CFUNCTION_ENSURE_CORRECT_NUMBER_INPUT_ARGS(M, args_in, 0);
+		return;
+	}
+	
+
+	orcus_float mean=0.0;
+	orcus_int n = 0;
+	orcus_variable out;
+	out.data.f = 0.0;
+	out.type = ORCUS_TYPE_FLOAT;
+
+
+	for (orcus_int a = 0; a < args_in; a++) {
+		orcus_variable* v =M->stack + M->sizeofstack - a - 1;
+		if (v->type == ORCUS_TYPE_FLOAT) {
+			mean += v->data.f;
+			n++;
+		}
+		else if (v->type == ORCUS_TYPE_INT) {
+			mean += (orcus_float)v->data.i;
+			n++;
+		}
+	}
+	mean /= (orcus_float)n;
+
+	for (orcus_int a = 0; a < args_in; a++) {
+		orcus_variable* v = M->stack + M->sizeofstack - a - 1;
+		if (v->type == ORCUS_TYPE_FLOAT) {
+			orcus_float f = mean - v->data.f;
+			out.data.f += f * f;
+		}
+		else if (v->type == ORCUS_TYPE_INT) {
+			orcus_float f = mean - (orcus_float)v->data.i;
+			out.data.f += f * f;
+		}
+	}
+	out.data.f /= (orcus_float)(n-1);
+	out.data.f = sqrt(out.data.f);
+	if (n <= 1)out.data.f = 0.0;
+	for (orcus_int a = 0; a < args_in; a++) {
+		orcus_release_var(M->stack + M->sizeofstack - a - 1);
+	}
+	M->sizeofstack -= args_in;
+
+	orcus_pushstack(M, &out);
+	ORCUS_CFUNCTION_ENSURE_CORRECT_NUMBER_OUTPUT_ARGS(M, args_out, 1);
+}
+
+
+void orcus_lib_math_stddev_array(orcus_state* const ORCUS_CPP_restrict M, const orcus_int args_in, const orcus_int args_out) {
+	ORCUS_CFUNCTION_ENSURE_CORRECT_NUMBER_INPUT_ARGS(M, args_in, 1);
+	if (!args_out) {
+		orcus_discard_top_of_stack(M);
+		return;
+	}
+	orcus_variable in;
+	orcus_popstack(M, &in);
+	if (in.type != ORCUS_TYPE_ARRAY) {
+		orcus_raise_error_firstargpointeronly(M, ORCUS_ERROR_WRONG_TYPE_VARIABLEPROVIDED, &in, ORCUS_TYPE_ARRAY, 1);
+		orcus_release_var(&in);
+		return;
+	}
+
+	orcus_float mean = 0.0;
+	orcus_int n = 0;
+	orcus_variable out;
+	out.data.f = 0.0;
+	out.type = ORCUS_TYPE_FLOAT;
+
+	orcus_array* arr = (orcus_array*)in.data.p;
+
+	if (arr->values) {
+#ifdef ORCUS_64BIT
+		for (int i1 = 0; i1 < ORCUS_SIZE_SUBARRAY_1; i1++) {
+			orcus_variable***** const st1 = arr->values[i1];
+			if (!st1)continue;
+			for (int i2 = 0; i2 < ORCUS_SIZE_SUBARRAY_2; i2++) {
+				orcus_variable**** const st2 = st1[i2];
+				if (!st2)continue;
+				for (int i3 = 0; i3 < ORCUS_SIZE_SUBARRAY_3; i3++) {
+					orcus_variable*** const st3 = st2[i3];
+					if (!st3)continue;
+					for (int i4 = 0; i4 < ORCUS_SIZE_SUBARRAY_4; i4++) {
+						orcus_variable** const st4 = st3[i4];
+						if (!st4)continue;
+						for (int i5 = 0; i5 < ORCUS_SIZE_SUBARRAY_5; i5++) {
+							orcus_variable* const st5 = st4[i5];
+							if (!st5)continue;
+							for (int i6 = 0; i6 < ORCUS_SIZE_SUBARRAY_6; i6++) {
+								orcus_variable const var = st5[i6];
+								const orcus_int index = orcus_reconstruct_array_index(i1, i2, i3, i4, i5, i6);
+#else
+		for (int i1 = 0; i1 < ORCUS_SIZE_SUBARRAY_1; i1++) {
+			orcus_variable** const st1 = arr->values[i1];
+			if (!st1)continue;
+			for (int i2 = 0; i2 < ORCUS_SIZE_SUBARRAY_2; i2++) {
+				orcus_variable* const st2 = st1[i2];
+				if (!st2)continue;
+				for (int i3 = 0; i3 < ORCUS_SIZE_SUBARRAY_3; i3++) {
+					orcus_variable const var = st2[i3];
+					const orcus_int index = orcus_reconstruct_array_index(i1, i2, i3);
+#endif
+					if (var.type == ORCUS_TYPE_INT) {
+						n++;
+						mean += (orcus_float)var.data.i;
+					}
+					else if (var.type == ORCUS_TYPE_FLOAT) {
+						n++;
+						mean += var.data.f;
+					}
+
+#ifdef ORCUS_64BIT
+				}
+			}
+		}
+							}
+						}
+					}
+#else
+				}
+			}
+		}
+#endif				
+	}
+
+	mean /= (orcus_float)n;
+
+	if (arr->values) {
+#ifdef ORCUS_64BIT
+		for (int i1 = 0; i1 < ORCUS_SIZE_SUBARRAY_1; i1++) {
+			orcus_variable***** const st1 = arr->values[i1];
+			if (!st1)continue;
+			for (int i2 = 0; i2 < ORCUS_SIZE_SUBARRAY_2; i2++) {
+				orcus_variable**** const st2 = st1[i2];
+				if (!st2)continue;
+				for (int i3 = 0; i3 < ORCUS_SIZE_SUBARRAY_3; i3++) {
+					orcus_variable*** const st3 = st2[i3];
+					if (!st3)continue;
+					for (int i4 = 0; i4 < ORCUS_SIZE_SUBARRAY_4; i4++) {
+						orcus_variable** const st4 = st3[i4];
+						if (!st4)continue;
+						for (int i5 = 0; i5 < ORCUS_SIZE_SUBARRAY_5; i5++) {
+							orcus_variable* const st5 = st4[i5];
+							if (!st5)continue;
+							for (int i6 = 0; i6 < ORCUS_SIZE_SUBARRAY_6; i6++) {
+								orcus_variable const var = st5[i6];
+								const orcus_int index = orcus_reconstruct_array_index(i1, i2, i3, i4, i5, i6);
+#else
+		for (int i1 = 0; i1 < ORCUS_SIZE_SUBARRAY_1; i1++) {
+			orcus_variable** const st1 = arr->values[i1];
+			if (!st1)continue;
+			for (int i2 = 0; i2 < ORCUS_SIZE_SUBARRAY_2; i2++) {
+				orcus_variable* const st2 = st1[i2];
+				if (!st2)continue;
+				for (int i3 = 0; i3 < ORCUS_SIZE_SUBARRAY_3; i3++) {
+					orcus_variable const var = st2[i3];
+					const orcus_int index = orcus_reconstruct_array_index(i1, i2, i3);
+#endif
+					if (var.type == ORCUS_TYPE_INT) {
+						orcus_float f = mean - (orcus_float)var.data.i;
+						out.data.f += f * f;
+					}
+					else if (var.type == ORCUS_TYPE_FLOAT) {
+						orcus_float f = mean - var.data.f;
+						out.data.f += f * f;
+					}
+
+#ifdef ORCUS_64BIT
+				}
+			}
+		}
+							}
+						}
+					}
+#else
+				}
+			}
+		}
+#endif				
+	}
+
+	out.data.f /= (orcus_float)(n-1);
+	out.data.f = sqrt(out.data.f);
+
+	if (n <= 1)out.data.f = 0.0;
+
+	orcus_release_var(&in);
+
+	orcus_pushstack(M, &out);
+
+	ORCUS_CFUNCTION_ENSURE_CORRECT_NUMBER_OUTPUT_ARGS(M, args_out, 1);
+}
+
+//might actually be greater to lesser. doesn't matter, actually. don't care.
+int sort_bitwidth_floats_lesser_to_greater(const void* a, const void* b) {
+	if (*(orcus_float*)a < *(orcus_float*)b) return -1;
+	if (*(orcus_float*)a > *(orcus_float*)b) return 1;
+	return 0;
+}
+
+
+
+void orcus_lib_math_median(orcus_state* const ORCUS_CPP_restrict M, const orcus_int args_in, const orcus_int args_out) {
+	if (!args_out) {
+		ORCUS_CFUNCTION_ENSURE_CORRECT_NUMBER_INPUT_ARGS(M, args_in, 0);
+		return;
+	}
+
+	if (!args_in) {
+		orcus_variable val;
+		val.type = ORCUS_TYPE_FLOAT;
+		val.data.f = 0.0;
+		val.data.f /= 0.0;
+		orcus_pushstack(M, &val);
+		ORCUS_CFUNCTION_ENSURE_CORRECT_NUMBER_OUTPUT_ARGS(M, args_out, 1);
+		return;
+	}
+
+	orcus_float* data = (orcus_float*)malloc(sizeof(orcus_float) * args_in);
+	orcus_int elements = 0;
+	if (!data) {
+		orcus_raise_error(M, ORCUS_ERROR_ALLOCATION);
+		return;
+	}
+	orcus_variable v;
+	for (orcus_int n = 0; n < args_in; n++) {
+		orcus_popstack(M, &v);
+		if (v.type == ORCUS_TYPE_FLOAT) {
+			data[elements] = v.data.f;
+			elements++;
+		}
+		else if (v.type == ORCUS_TYPE_INT) {
+			data[elements] = (orcus_float)v.data.i;
+			elements++;
+		}
+	}
+
+	v.type = ORCUS_TYPE_FLOAT;
+	if (elements < 2) {
+		v.data.f = data[0];
+	}
+	else {
+		qsort(data, elements, sizeof(orcus_float), sort_bitwidth_floats_lesser_to_greater);
+		if (elements % 2) {
+			v.data.f = data[elements / 2];
+		}
+		else {
+			v.data.f = (data[(elements / 2 - 1)] + data[elements / 2]) / 2;
+		}
+	}
+	free(data);
+	orcus_pushstack(M, &v);
+
+	ORCUS_CFUNCTION_ENSURE_CORRECT_NUMBER_OUTPUT_ARGS(M, args_out, 1);
+}
+
+
+
+void orcus_lib_math_median_array(orcus_state* const ORCUS_CPP_restrict M, const orcus_int args_in, const orcus_int args_out) {
+	ORCUS_CFUNCTION_ENSURE_CORRECT_NUMBER_INPUT_ARGS(M, args_in, 1);
+	if (!args_out) {
+		orcus_discard_top_of_stack(M);
+		return;
+	}
+	orcus_variable in;
+	orcus_popstack(M, &in);
+	if (in.type != ORCUS_TYPE_ARRAY) {
+		orcus_raise_error_firstargpointeronly(M, ORCUS_ERROR_WRONG_TYPE_VARIABLEPROVIDED, &in, ORCUS_TYPE_ARRAY, 1);
+		orcus_release_var(&in);
+		return;
+	}
+
+	orcus_variable out;
+	out.data.f = 0.0;
+	out.type = ORCUS_TYPE_FLOAT;
+
+	orcus_int elements = 0;
+
+	orcus_array* arr = (orcus_array*)in.data.p;
+
+	if (arr->values) {
+#ifdef ORCUS_64BIT
+		for (int i1 = 0; i1 < ORCUS_SIZE_SUBARRAY_1; i1++) {
+			orcus_variable***** const st1 = arr->values[i1];
+			if (!st1)continue;
+			for (int i2 = 0; i2 < ORCUS_SIZE_SUBARRAY_2; i2++) {
+				orcus_variable**** const st2 = st1[i2];
+				if (!st2)continue;
+				for (int i3 = 0; i3 < ORCUS_SIZE_SUBARRAY_3; i3++) {
+					orcus_variable*** const st3 = st2[i3];
+					if (!st3)continue;
+					for (int i4 = 0; i4 < ORCUS_SIZE_SUBARRAY_4; i4++) {
+						orcus_variable** const st4 = st3[i4];
+						if (!st4)continue;
+						for (int i5 = 0; i5 < ORCUS_SIZE_SUBARRAY_5; i5++) {
+							orcus_variable* const st5 = st4[i5];
+							if (!st5)continue;
+							for (int i6 = 0; i6 < ORCUS_SIZE_SUBARRAY_6; i6++) {
+								orcus_variable const var = st5[i6];
+								const orcus_int index = orcus_reconstruct_array_index(i1, i2, i3, i4, i5, i6);
+#else
+		for (int i1 = 0; i1 < ORCUS_SIZE_SUBARRAY_1; i1++) {
+			orcus_variable** const st1 = arr->values[i1];
+			if (!st1)continue;
+			for (int i2 = 0; i2 < ORCUS_SIZE_SUBARRAY_2; i2++) {
+				orcus_variable* const st2 = st1[i2];
+				if (!st2)continue;
+				for (int i3 = 0; i3 < ORCUS_SIZE_SUBARRAY_3; i3++) {
+					orcus_variable const var = st2[i3];
+					const orcus_int index = orcus_reconstruct_array_index(i1, i2, i3);
+#endif
+					if (var.type == ORCUS_TYPE_INT) {
+						elements++;
+					}
+					else if (var.type == ORCUS_TYPE_FLOAT) {
+						elements++;
+					}
+
+#ifdef ORCUS_64BIT
+				}
+			}
+		}
+							}
+						}
+					}
+#else
+				}
+			}
+		}
+#endif				
+	}
+
+	if (!elements) {
+		orcus_variable val;
+		val.type = ORCUS_TYPE_FLOAT;
+		val.data.f = 0.0;
+		val.data.f /= 0.0;
+		orcus_pushstack(M, &val);
+		ORCUS_CFUNCTION_ENSURE_CORRECT_NUMBER_OUTPUT_ARGS(M, args_out, 1);
+		orcus_release_var(&in);
+		return;
+	}
+
+	orcus_float* data = (orcus_float*)malloc(sizeof(orcus_float) * elements);
+	if (!data) {
+		orcus_raise_error(M, ORCUS_ERROR_ALLOCATION);
+		return;
+	}
+
+	orcus_int n = 0;
+
+	if (arr->values) {
+#ifdef ORCUS_64BIT
+		for (int i1 = 0; i1 < ORCUS_SIZE_SUBARRAY_1; i1++) {
+			orcus_variable***** const st1 = arr->values[i1];
+			if (!st1)continue;
+			for (int i2 = 0; i2 < ORCUS_SIZE_SUBARRAY_2; i2++) {
+				orcus_variable**** const st2 = st1[i2];
+				if (!st2)continue;
+				for (int i3 = 0; i3 < ORCUS_SIZE_SUBARRAY_3; i3++) {
+					orcus_variable*** const st3 = st2[i3];
+					if (!st3)continue;
+					for (int i4 = 0; i4 < ORCUS_SIZE_SUBARRAY_4; i4++) {
+						orcus_variable** const st4 = st3[i4];
+						if (!st4)continue;
+						for (int i5 = 0; i5 < ORCUS_SIZE_SUBARRAY_5; i5++) {
+							orcus_variable* const st5 = st4[i5];
+							if (!st5)continue;
+							for (int i6 = 0; i6 < ORCUS_SIZE_SUBARRAY_6; i6++) {
+								orcus_variable const var = st5[i6];
+								const orcus_int index = orcus_reconstruct_array_index(i1, i2, i3, i4, i5, i6);
+#else
+		for (int i1 = 0; i1 < ORCUS_SIZE_SUBARRAY_1; i1++) {
+			orcus_variable** const st1 = arr->values[i1];
+			if (!st1)continue;
+			for (int i2 = 0; i2 < ORCUS_SIZE_SUBARRAY_2; i2++) {
+				orcus_variable* const st2 = st1[i2];
+				if (!st2)continue;
+				for (int i3 = 0; i3 < ORCUS_SIZE_SUBARRAY_3; i3++) {
+					orcus_variable const var = st2[i3];
+					const orcus_int index = orcus_reconstruct_array_index(i1, i2, i3);
+#endif
+					if (var.type == ORCUS_TYPE_INT) {
+						data[n] = (orcus_float)var.data.i;
+						n++;
+					}
+					else if (var.type == ORCUS_TYPE_FLOAT) {
+						data[n] = var.data.f;
+						n++;
+					}
+
+#ifdef ORCUS_64BIT
+				}
+			}
+		}
+							}
+						}
+					}
+#else
+				}
+			}
+		}
+#endif				
+	}
+
+
+	orcus_release_var(&in);
+
+	orcus_variable v;
+	v.type = ORCUS_TYPE_FLOAT;
+	if (elements < 2) {
+		v.data.f = data[0];
+	}
+	else {
+		qsort(data, elements, sizeof(orcus_float), sort_bitwidth_floats_lesser_to_greater);
+		if (elements % 2) {
+			v.data.f = data[elements / 2];
+		}
+		else {
+			v.data.f = (data[(elements / 2 - 1)] + data[elements / 2]) / 2;
+		}
+	}
+	free(data);
+	orcus_pushstack(M, &v);
 
 	ORCUS_CFUNCTION_ENSURE_CORRECT_NUMBER_OUTPUT_ARGS(M, args_out, 1);
 }

@@ -29,6 +29,10 @@ void orcus_lib_math_min_array(orcus_state* const ORCUS_CPP_restrict M, const orc
 void orcus_lib_math_max_array(orcus_state* const ORCUS_CPP_restrict M, const orcus_int args_in, const orcus_int args_out);
 void orcus_lib_math_mean(orcus_state* const ORCUS_CPP_restrict M, const orcus_int args_in, const orcus_int args_out);
 void orcus_lib_math_mean_array(orcus_state* const ORCUS_CPP_restrict M, const orcus_int args_in, const orcus_int args_out);
+void orcus_lib_math_stddev(orcus_state* const ORCUS_CPP_restrict M, const orcus_int args_in, const orcus_int args_out);
+void orcus_lib_math_stddev_array(orcus_state* const ORCUS_CPP_restrict M, const orcus_int args_in, const orcus_int args_out);
+void orcus_lib_math_median(orcus_state* const ORCUS_CPP_restrict M, const orcus_int args_in, const orcus_int args_out);
+void orcus_lib_math_median_array(orcus_state* const ORCUS_CPP_restrict M, const orcus_int args_in, const orcus_int args_out);
 
 void orcus_lib_math_random(orcus_state* const ORCUS_CPP_restrict M, const orcus_int args_in, const orcus_int args_out);
 void orcus_lib_math_randomint(orcus_state* const ORCUS_CPP_restrict M, const orcus_int args_in, const orcus_int args_out);

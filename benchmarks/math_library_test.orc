@@ -131,3 +131,17 @@ if math.randomseed()!=initial then
 	print("math.randomseed did not preserve seed state.")
 	return 1
 end
+
+if !!aprox(math.stddev(1,2,2,3,3,4,4,5,5,5,1),1.53741222957) then
+	print("math.stddev returned incorrect result")
+end
+if !!aprox(math.astddev([1,2,2,3,3,4,4,5,5,5,1]),1.53741222957) then
+	print("math.astddev returned incorrect result")
+end
+
+if !!aprox(math.median(1,2,2,3,3,4,4,5,5,5,1),3.0) then
+	print("math.median returned incorrect result")
+end
+if !!aprox(math.amedian([1,2,2,3,3,4,4,5,5,5,1]),3.0) then
+	print("math.amedian returned incorrect result")
+end
