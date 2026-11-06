@@ -586,6 +586,7 @@ compiler_token* orcus_compile_tokenize_mstring(orcus_string* str,orcus_int* num_
 						case '}':
 						case ']':
 						case ':':
+						case '?':
 						case '.':
 						case ',':
 							t.token_flags = TOKEN_OPERATOR | TOKEN_MISC_OP;
@@ -1967,6 +1968,41 @@ orcus_int m_compile_read_var_statment(compiler_function* f, compiler_token* toke
 
 	merge_compiler_functions_nofree(f, &func_complete);
 	clear_compiler_function(&func_complete);
+
+	//try to read ternery statment
+	cur_tok = m_compile_get_next_token(tokens, num_tokens, token_offset);
+	if (cur_tok && cur_tok->num_chars == 1 && cur_tok->chars[0] == '?' && (cur_tok->token_flags & (TOKEN_OPERATOR | TOKEN_MISC_OP)) ) {
+		orcus_int oci = f->num_args_out;
+
+		add_instruction(f, ORCUS_OPCODE_JRNI, token_offset);
+		orcus_int jumppos_sidefalse = f->number_instructions;
+		add_rawdata_bitwidth_size(f, 0, token_offset);
+		f->num_args_out = 1;
+		token_offset++;
+		token_offset+=m_compile_read_var_statment(f, tokens, num_tokens, token_offset);
+		if (f->errorcode)return 0;
+
+		cur_tok = m_compile_get_next_token(tokens, num_tokens, token_offset);
+		if (!(cur_tok && cur_tok->num_chars == 1 && cur_tok->chars[0] == ':' && (cur_tok->token_flags & (TOKEN_OPERATOR | TOKEN_MISC_OP)))) {
+			f->errorcode = ORCUS_COMPERR_NO_VARIABLE;
+			f->token_error_num = token_offset;
+			return 0;
+		}
+		add_instruction(f, ORCUS_OPCODE_JMPR, token_offset);
+		orcus_int jumppos_sidetrue = f->number_instructions;
+		add_rawdata_bitwidth_size(f, 0, token_offset);
+
+		*((orcus_int*)(f->instructions + jumppos_sidefalse)) = f->number_instructions - jumppos_sidefalse; //set jump to false section
+
+		f->num_args_out = 1;
+		token_offset++;
+		token_offset += m_compile_read_var_statment(f, tokens, num_tokens, token_offset);
+		if (f->errorcode)return 0;
+		*((orcus_int*)(f->instructions + jumppos_sidetrue)) = f->number_instructions - jumppos_sidetrue; //set true section to jump over false secation.
+
+		f->num_args_out = oci;
+
+	}
 	
 	return token_offset-initial_offset;
 }
