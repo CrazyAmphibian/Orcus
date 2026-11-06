@@ -1675,49 +1675,11 @@ orcus_int m_compile_read_binary_op(compiler_function* f, compiler_token* tokens,
 	if(!cur_tok){
 		return 0;
 	}else if(cur_tok->token_flags & TOKEN_BINARY_OP && !(cur_tok->token_flags & TOKEN_SELFMODIFY_OP) ){
-		compiler_function postfix;
-		memset(&postfix, 0, sizeof(postfix));
-		propigate_compiler_info_down(f, &postfix);
-		orcus_int oao = f->num_args_out;
-		f->num_args_out = 1;
-		if (cur_tok->num_chars == 2 && cur_tok->chars[0]== cur_tok->chars[1] && (cur_tok->chars[0]=='&' || cur_tok->chars[0]=='|')) {
-			//short cuircit operation for && and ||
-			add_instruction(f, ORCUS_OPCODE_CPYT, initial_offset);
-			if (cur_tok->chars[0] == '&') { // &&. if the first arg is false, copy and jump past
-				add_instruction(f, ORCUS_OPCODE_JRNI, initial_offset);
-			}
-			else if (cur_tok->chars[0] == '|') { // ||. if the first arg is true, copy and jump past
-				add_instruction(f, ORCUS_OPCODE_JRIF, initial_offset);
-			}
-			orcus_int offset = f->number_instructions;
-			add_rawdata_bitwidth_size(f, 0, initial_offset);
-			token_offset++;
-			add_instruction(&postfix, m_compile_get_operator_opcode_from_token(cur_tok), initial_offset);
-			token_offset += m_compile_read_var_statment(f, tokens, num_tokens, token_offset,&postfix);
-			
-			*((orcus_int*)(f->instructions + offset)) = f->number_instructions - offset;
-		}
-		else {
-			token_offset++;
-			add_instruction(&postfix, m_compile_get_operator_opcode_from_token(cur_tok), initial_offset);
-			token_offset+=m_compile_read_var_statment(f, tokens, num_tokens, token_offset,&postfix);
-			
-		}
-		f->num_args_out = oao;
-		clear_compiler_function(&postfix);
+		add_instruction(f, m_compile_get_operator_opcode_from_token(cur_tok), token_offset);
+		token_offset++;
 	}
 	else if (cur_tok->token_flags & TOKEN_STATIC_NUMBER && cur_tok->chars[0] == '-') {
-		compiler_function postfix;
-		memset(&postfix, 0, sizeof(postfix));
-		propigate_compiler_info_down(f, &postfix);
-		orcus_int oao = f->num_args_out;
-		f->num_args_out = 1;
-
-		add_instruction(&postfix, ORCUS_OPCODE_ADD, token_offset); //do not increment the token count, as we need to read it again to know what number we are adding.
-		token_offset += m_compile_read_var_statment(f, tokens, num_tokens, token_offset,&postfix);
-
-		f->num_args_out = oao;
-		clear_compiler_function(&postfix);
+		add_instruction(f, ORCUS_OPCODE_ADD, token_offset); //do not increment the token count, as we need to read it again to know what number we are adding.
 	}else{
 		return 0;
 	}
@@ -1997,10 +1959,8 @@ orcus_int m_compile_read_var_statment(compiler_function* f, compiler_token* toke
 		return 0;
 	}
 	if(func_binary.number_instructions){ //if we registered a binary operator, then we need to read ahead to get the other statement, which means we get to do this whole thing again.
-		//func_complete.num_args_out = 1;
-		//token_offset+=m_compile_read_var_statment(&func_complete, tokens, num_tokens, token_offset, &func_binary); //todo: move this into read_binary_op, to save on monkeying with varaibles and ordering a bit.
-		merge_compiler_functions_nofree(&func_complete, &func_binary);
-		clear_compiler_function(&func_binary);
+		func_complete.num_args_out = 1;
+		token_offset+=m_compile_read_var_statment(&func_complete, tokens, num_tokens, token_offset, &func_binary);
 	}else{
 		clear_compiler_function(&func_binary);
 	}
