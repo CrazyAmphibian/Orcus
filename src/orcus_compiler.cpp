@@ -79,6 +79,30 @@ struct compiler_function {
 	
 	orcus_int token_error_num = 0;
 	int errorcode = 0;
+
+	compiler_function* master = nullptr; //stores the top-level CF, for constants and stuff.
+
+	//info for loops
+	bool in_loop = false;
+	orcus_int* loop_jumptostarts = nullptr;
+	orcus_int num_loop_jumptostart = 0;
+	orcus_int* loop_jumptoends = nullptr;
+	orcus_int num_loop_jumptoend = 0;
+
+	//constant strings
+	orcus_int num_string_constants = 0;
+	compiler_token* string_constant_tokens = nullptr;
+
+	//goto
+	orcus_int num_gotos = 0; //how many goto labels exist
+	orcus_int** goto_positions = nullptr; //where each goto is in bytecode, as absolute instruction number. list of lists. positions[label][goto_num]
+	orcus_int* goto_pos_count = nullptr; // how many gotos are present in each label
+	bool* goto_defined; // if the goto was defined with a label
+	compiler_token* goto_alias = nullptr; //the identifier used for the goto's label
+	orcus_int* goto_labelpos = nullptr; //where the label is defined in bytecode, as an absolute instruction number
+
+	//multiarg output
+	orcus_int num_args_out = 0;
 };
 
 
@@ -638,262 +662,149 @@ compiler_token* orcus_compile_tokenize_mstring(orcus_string* str,orcus_int* num_
 }
 //end of tokenization code, probably.
 
-struct compiler_info {
-	orcus_int additional_instructions = 0;
-
-	//for while loops
-	bool in_loop = false;
-	orcus_int loop_jumppoint_start = 0; //used to track where continue and loop end will bring you to
-	orcus_int loop_endpoint_ref_count = 0; //tracks the number of below refs
-	orcus_int* loop_endpoint_ref_pos = nullptr; //where each break point is. filled in once a loop is compiled so that break will skip to after the loop ends.
-
-	//for if thens
-	bool in_conditional = false;
-	orcus_int conditional_jumppoint_init = 0; // for if statments, stores the position JRNI distance of the last conditional check, so that it skips to the start of the next elseif/else block.
-	orcus_int conditional_jumptoend_count = 0; //these are placed at the end of every elseif/if block to jump to the end so that other blocks are not called when we already executed one.
-	orcus_int* conditional_jumptoend_points = nullptr;
-	bool conditional_defaultcase = false;
-
-	//constant strings
-	orcus_int num_constants = 0;
-	orcus_string* constants = nullptr;
-
-	//goto compiling. this is made difficult because we can have situations where we write goto before the label is defined. because the compiler is single pass, this is made a bit tricky, but not impossible. eg, goto a a:
-	orcus_int num_gotos = 0; //how many different goto labels are being used. eg, 2
-	orcus_int** goto_positions = nullptr; //where the goto keywords are in instruction space. eg, [1], [55,43,32]
-	orcus_int* goto_pos_count = nullptr; // how many gotos are present. eg, 1,3
-	bool* goto_defined = nullptr; //if the label is defined yet. eg, 0,1 
-	orcus_string* goto_alias = nullptr; //the string of the goto label. eg, "stuff","cancel"
-	orcus_int* goto_labelpos = nullptr; //where the label is defined. eg, ?,50
-
-	//multiarg out support
-	orcus_int args_out = 1;
-};
-
-inline void init_compiler_info(compiler_info* ci) {
-	memset(ci, 0, sizeof(compiler_info));
+//adding break keyword
+inline bool compiler_add_loop_endjump(compiler_function* f,orcus_int instruction_point) {
+	orcus_int* n=(orcus_int*)realloc(f->loop_jumptoends, sizeof(orcus_int) * (f->num_loop_jumptoend + 1));
+	if (!n)return false;
+	n[f->num_loop_jumptoend] = instruction_point;
+	f->loop_jumptoends = n;
+	f->num_loop_jumptoend++;
+	return true;
 }
-
-inline compiler_info* new_compiler_info(){ //this exists to be used in m_compile_read_keyword_block and orcus_compile_tokens_to_bytecode, and whatnot to dictate keywords and control flow. doesn't need to be propagated to low-end functions like m_compile_read_variable or m_compile_read_statment.
-//haha just kidding. that was the plan, but, well... programming. turns out constant statements need that propagation so... oh well. turns out a compiler with any amount of good features needs to do that, i guess. at least goto should be less compilated... right?
-	compiler_info* out=(compiler_info*)malloc(sizeof(compiler_info));
-	if(!out)return out;
-
-	out->additional_instructions=0;
-	
-	out->in_loop=false;
-	out->loop_jumppoint_start=0;
-	out->loop_endpoint_ref_count=0;
-	out->loop_endpoint_ref_pos=nullptr;
-
-	out->in_conditional=false;
-	out->conditional_jumppoint_init=0;
-	out->conditional_jumptoend_count=0;
-	out->conditional_jumptoend_points=nullptr;
-	out->conditional_defaultcase=false;
-	
-	out->num_constants=0;
-	out->constants=nullptr;
-	
-	out->num_gotos=0;
-	
-	out->goto_positions=nullptr;
-	out->goto_pos_count=nullptr;
-	out->goto_defined=nullptr;
-	out->goto_alias=nullptr;
-	out->goto_labelpos=nullptr;
-	
-	out->args_out = 1;
-
-	return out;
-}
-
-inline void clear_compiler_info(compiler_info* i) {
-	free(i->loop_endpoint_ref_pos);
-	free(i->conditional_jumptoend_points);
-	free(i->constants);
-	for (orcus_int n = 0; n < i->num_gotos; n++) {
-		free(i->goto_positions[n]);
-	}
-	free(i->goto_pos_count);
-	free(i->goto_positions);
-	free(i->goto_defined);
-	free(i->goto_alias);
-	free(i->goto_labelpos);
-}
-
-inline void delete_compiler_info(compiler_info* i){
-	free(i->loop_endpoint_ref_pos);
-	free(i->conditional_jumptoend_points);
-	free(i->constants);
-	for(orcus_int n=0;n<i->num_gotos;n++){
-		free(i->goto_positions[n]);
-	}
-	free(i->goto_pos_count);
-	free(i->goto_positions);
-	free(i->goto_defined);
-	free(i->goto_alias);
-	free(i->goto_labelpos);	
-	free(i);
-}
-
-inline void propogate_compiler_info(compiler_info* i_upstream, compiler_info* i_downstream) {
-	i_upstream->constants = i_downstream->constants;
-	i_upstream->num_constants = i_downstream->num_constants;
-	i_upstream->num_gotos = i_downstream->num_gotos;
-	i_upstream->goto_positions = i_downstream->goto_positions;
-	i_upstream->goto_pos_count = i_downstream->goto_pos_count;
-	i_upstream->goto_defined = i_downstream->goto_defined;
-	i_upstream->goto_alias = i_downstream->goto_alias;
-	i_upstream->goto_labelpos = i_downstream->goto_labelpos;
-}
-
-inline bool compiler_info_add_loop_endjump(compiler_info* i,orcus_int instruction_point){
-	orcus_int* n=(orcus_int*)realloc(i->loop_endpoint_ref_pos,sizeof(orcus_int)*(i->loop_endpoint_ref_count+1) );
-	if(!n)return false;
-	n[i->loop_endpoint_ref_count] = instruction_point;
-	i->loop_endpoint_ref_pos=n;
-	i->loop_endpoint_ref_count++;
+inline bool compiler_add_loop_startjump(compiler_function* f, orcus_int instruction_point) {
+	orcus_int* n = (orcus_int*)realloc(f->loop_jumptostarts, sizeof(orcus_int) * (f->num_loop_jumptostart + 1));
+	if (!n)return false;
+	n[f->num_loop_jumptostart] = instruction_point;
+	f->loop_jumptostarts = n;
+	f->num_loop_jumptostart++;
 	return true;
 }
 
-inline bool compiler_info_add_conditional_endjump(compiler_info* i,orcus_int instruction_point){
-	orcus_int* n=(orcus_int*)realloc(i->conditional_jumptoend_points,sizeof(orcus_int)*(i->conditional_jumptoend_count+1) );
-	if(!n)return false;
-	n[i->conditional_jumptoend_count] = instruction_point;
-	i->conditional_jumptoend_points=n;
-	i->conditional_jumptoend_count++;
-	return true;
-}
-
-inline orcus_int compiler_info_add_constant_string_from_token(compiler_info* i,compiler_token* t){
-	for(orcus_int n=0;n<i->num_constants;n++){
-		orcus_string s=i->constants[n];
-		if (s.size!=t->num_chars)continue;
-		for(orcus_int c=0;c<s.size;c++){
-			if(s.ptr[c]!=t->chars[c])goto exit;
+inline orcus_int compiler_add_constant_string_from_token(compiler_function* fb, compiler_token* t) {
+	compiler_function* f = fb->master;
+	for (orcus_int n = 0; n < f->num_string_constants; n++) {
+		compiler_token s = f->string_constant_tokens[n];
+		if (s.num_chars != t->num_chars)continue;
+		for (orcus_int c = 0; c < s.num_chars; c++) {
+			if (s.chars[c] != t->chars[c])goto exit;
 		}
 		return n;
-		exit:;
+	exit:;
 	}
-	
-	orcus_string* nptr= (orcus_string*)realloc(i->constants,sizeof(orcus_string)*(i->num_constants+1) );
-	if(!nptr)return -1; //surely nobody will use 4294967295 / 18446744073709551615 constants in their code, right?
-	i->constants=nptr;
-	orcus_string* nstr=i->constants+i->num_constants;
-	nstr->size = t->num_chars;
-	nstr->ptr = t->chars;
-	i->num_constants++;
-	return i->num_constants-1;
+
+	compiler_token* nptr = (compiler_token*)realloc(f->string_constant_tokens, sizeof(compiler_token) * (f->num_string_constants + 1));
+	if (!nptr)return -1; //surely nobody will use 4294967295 / 18446744073709551615 constants in their code, right?
+	f->string_constant_tokens = nptr;
+	nptr[f->num_string_constants] = *t;
+	f->num_string_constants++;
+	return f->num_string_constants - 1;
 }
 
-inline bool compiler_info_add_goto_jump(compiler_info* i,compiler_token* t,orcus_int instruction_point){
+inline bool compiler_add_goto_jump(compiler_function* f, compiler_token* t, orcus_int instruction_point) {
+	//compiler_function* f = fb->master;
 	void* nptr;
-	
-	for(orcus_int n=0;n<i->num_gotos;n++){
-		orcus_string s=i->goto_alias[n];
-		if(s.size!=t->num_chars)continue;
-		for(orcus_int c=0;c<t->num_chars;c++){
-			if(t->chars[c]!=s.ptr[c])goto next;
+	for (orcus_int n = 0; n < f->num_gotos; n++) {
+		compiler_token s = f->goto_alias[n];
+		if (s.num_chars != t->num_chars)continue;
+		for (orcus_int c = 0; c < t->num_chars; c++) {
+			if (t->chars[c] != s.chars[c])goto next;
 		}
-		
-		nptr=realloc(i->goto_positions[n],sizeof(orcus_int)*(i->goto_pos_count[n]+1) );
-		if(!nptr)return false;
-		i->goto_positions[n] = (orcus_int*)nptr;
-		i->goto_positions[n][i->goto_pos_count[n]]=instruction_point;
-		i->goto_pos_count[n]++;
-		return true;
-		
-		next:;
-	}
-	
-	nptr=realloc(i->goto_positions, sizeof(orcus_int*)*(i->num_gotos+1));
-	if(!nptr)return false;
-	i->goto_positions=(orcus_int**)nptr;
 
-	nptr=realloc(i->goto_pos_count, sizeof(orcus_int)*(i->num_gotos+1));
-	if(!nptr)return false;
-	i->goto_pos_count=(orcus_int*)nptr;	
-	
-	nptr=realloc(i->goto_defined, sizeof(bool)*(i->num_gotos+1));
-	if(!nptr)return false;
-	i->goto_defined=(bool*)nptr;	
-	
-	nptr=realloc(i->goto_alias, sizeof(orcus_string)*(i->num_gotos+1));
-	if(!nptr)return false;
-	i->goto_alias=(orcus_string*)nptr;
-	
-	nptr=realloc(i->goto_labelpos, sizeof(orcus_int)*(i->num_gotos+1));
-	if(!nptr)return false;
-	i->goto_labelpos=(orcus_int*)nptr;	
-	
-	nptr=malloc(sizeof(orcus_int));
-	if(!nptr)return false;
-	i->goto_positions[i->num_gotos]=(orcus_int*)nptr;
-	i->goto_positions[i->num_gotos][0] = instruction_point;
-	i->goto_pos_count[i->num_gotos]=1;
-	i->goto_defined[i->num_gotos]=false;
-	orcus_string s;
-	s.ptr=t->chars;
-	s.size=t->num_chars;
-	i->goto_alias[i->num_gotos]=s;
-	i->goto_labelpos[i->num_gotos]=0;
-	
-	i->num_gotos++;
+		nptr = realloc(f->goto_positions[n], sizeof(orcus_int) * (f->goto_pos_count[n] + 1));
+		if (!nptr)return false;
+		f->goto_positions[n] = (orcus_int*)nptr;
+		f->goto_positions[n][f->goto_pos_count[n]] = instruction_point;
+		f->goto_pos_count[n]++;
+		return true;
+
+	next:;
+	}
+
+	nptr = realloc(f->goto_positions, sizeof(orcus_int*) * (f->num_gotos + 1));
+	if (!nptr)return false;
+	f->goto_positions = (orcus_int**)nptr;
+
+	nptr = realloc(f->goto_pos_count, sizeof(orcus_int) * (f->num_gotos + 1));
+	if (!nptr)return false;
+	f->goto_pos_count = (orcus_int*)nptr;
+
+	nptr = realloc(f->goto_defined, sizeof(bool) * (f->num_gotos + 1));
+	if (!nptr)return false;
+	f->goto_defined = (bool*)nptr;
+
+	nptr = realloc(f->goto_alias, sizeof(compiler_token) * (f->num_gotos + 1));
+	if (!nptr)return false;
+	f->goto_alias = (compiler_token*)nptr;
+
+	nptr = realloc(f->goto_labelpos, sizeof(orcus_int) * (f->num_gotos + 1));
+	if (!nptr)return false;
+	f->goto_labelpos = (orcus_int*)nptr;
+
+	nptr = malloc(sizeof(orcus_int));
+	if (!nptr)return false;
+	f->goto_positions[f->num_gotos] = (orcus_int*)nptr;
+	f->goto_positions[f->num_gotos][0] = instruction_point;
+	f->goto_pos_count[f->num_gotos] = 1;
+	f->goto_defined[f->num_gotos] = false;
+	f->goto_alias[f->num_gotos] = *t;
+	f->goto_labelpos[f->num_gotos] = 0;
+
+	f->num_gotos++;
 	return true;
 }
 
-
-inline bool compiler_info_add_goto_label(compiler_info* i,compiler_token* t,orcus_int instruction_point){
+inline bool compiler_add_goto_label(compiler_function* f, compiler_token* t, orcus_int instruction_point) {
+	//compiler_function* f = fb->master;
 	void* nptr;
 
-	for(orcus_int n=0;n<i->num_gotos;n++){
-		orcus_string s=i->goto_alias[n];
-		if(s.size!=t->num_chars)continue;
-		for(orcus_int c=0;c<t->num_chars;c++){
-			if(t->chars[c]!=s.ptr[c])goto next;
+	for (orcus_int n = 0; n < f->num_gotos; n++) {
+		compiler_token s = f->goto_alias[n];
+		if (s.num_chars != t->num_chars)continue;
+		for (orcus_int c = 0; c < t->num_chars; c++) {
+			if (t->chars[c] != s.chars[c])goto next;
 		}
 
-		i->goto_defined[n]=true;
-		i->goto_labelpos[n]=instruction_point;
+		f->goto_defined[n] = true;
+		f->goto_labelpos[n] = instruction_point;
 		return true;
-		
-		next:;
-	}
-	
-	nptr=realloc(i->goto_positions, sizeof(orcus_int*)*(i->num_gotos+1));
-	if(!nptr)return false;
-	i->goto_positions=(orcus_int**)nptr;
 
-	nptr=realloc(i->goto_pos_count, sizeof(orcus_int)*(i->num_gotos+1));
-	if(!nptr)return false;
-	i->goto_pos_count=(orcus_int*)nptr;	
-	
-	nptr=realloc(i->goto_defined, sizeof(bool)*(i->num_gotos+1));
-	if(!nptr)return false;
-	i->goto_defined=(bool*)nptr;	
-	
-	nptr=realloc(i->goto_alias, sizeof(orcus_string)*(i->num_gotos+1));
-	if(!nptr)return false;
-	i->goto_alias=(orcus_string*)nptr;
-	
-	nptr=realloc(i->goto_labelpos, sizeof(orcus_int)*(i->num_gotos+1));
-	if(!nptr)return false;
-	i->goto_labelpos=(orcus_int*)nptr;
-	
-	i->goto_positions[i->num_gotos]=nullptr;
-	i->goto_pos_count[i->num_gotos]=0;
-	i->goto_defined[i->num_gotos]=true;
-	orcus_string s;
-	s.ptr=t->chars;
-	s.size=t->num_chars;
-	i->goto_alias[i->num_gotos]=s;
-	i->goto_labelpos[i->num_gotos]=instruction_point;
-	
-	i->num_gotos++;
+	next:;
+	}
+
+	nptr = realloc(f->goto_positions, sizeof(orcus_int*) * (f->num_gotos + 1));
+	if (!nptr)return false;
+	f->goto_positions = (orcus_int**)nptr;
+
+	nptr = realloc(f->goto_pos_count, sizeof(orcus_int) * (f->num_gotos + 1));
+	if (!nptr)return false;
+	f->goto_pos_count = (orcus_int*)nptr;
+
+	nptr = realloc(f->goto_defined, sizeof(bool) * (f->num_gotos + 1));
+	if (!nptr)return false;
+	f->goto_defined = (bool*)nptr;
+
+	nptr = realloc(f->goto_alias, sizeof(compiler_token) * (f->num_gotos + 1));
+	if (!nptr)return false;
+	f->goto_alias = (compiler_token*)nptr;
+
+	nptr = realloc(f->goto_labelpos, sizeof(orcus_int) * (f->num_gotos + 1));
+	if (!nptr)return false;
+	f->goto_labelpos = (orcus_int*)nptr;
+
+	f->goto_positions[f->num_gotos] = nullptr;
+	f->goto_pos_count[f->num_gotos] = 0;
+	f->goto_defined[f->num_gotos] = true;
+	f->goto_alias[f->num_gotos] = *t;
+	f->goto_labelpos[f->num_gotos] = instruction_point;
+
+	f->num_gotos++;
 	return true;
 }
 
+inline void propigate_compiler_info_down(compiler_function* parent, compiler_function* child) {
+	child->master = parent->master;
+	child->in_loop = parent->in_loop;
+}
 
 inline compiler_function* new_compiler_function(){
 	compiler_function* out = (compiler_function*)malloc(sizeof(compiler_function));
@@ -909,14 +820,24 @@ inline compiler_function* new_compiler_function(){
 }
 
 inline void clear_compiler_function(compiler_function* f) {
-	if (f->instructions)free(f->instructions);
-	if (f->instruction_tokens)free(f->instruction_tokens);
+	free(f->instructions);
+	free(f->instruction_tokens);
+	free(f->string_constant_tokens);
+	free(f->loop_jumptoends);
+	free(f->loop_jumptostarts);
+	for (orcus_int i = 0; i < f->num_gotos;i++) {
+		free(f->goto_positions[i]);
+	}
+	free(f->goto_alias);
+	free(f->goto_defined);
+	free(f->goto_labelpos);
+	free(f->goto_pos_count);
+	free(f->goto_positions);
 	memset(f, 0, sizeof(compiler_function));
 }
 
 inline void delete_compiler_function(compiler_function* f){
-	if(f->instructions)free(f->instructions);
-	if(f->instruction_tokens)free(f->instruction_tokens);
+	clear_compiler_function(f);
 	free(f);
 }
 
@@ -925,6 +846,40 @@ inline void delete_compiler_function(compiler_function* f){
 
 //appends the bytecode of fadd to fbase, and frees fadd.
 inline bool merge_compiler_functions(compiler_function* fbase, compiler_function* fadd){
+	if (fadd->num_string_constants) {
+		compiler_token* tks=(compiler_token*)realloc(fbase->string_constant_tokens, sizeof(compiler_token)*(fadd->num_string_constants+fbase->num_string_constants) );
+		if (!tks)return false;
+		fbase->string_constant_tokens = tks;
+		memcpy(fbase->string_constant_tokens + fbase->num_string_constants, fadd->string_constant_tokens, fadd->num_string_constants * sizeof(compiler_token));
+		fbase->num_string_constants+=fadd->num_string_constants;
+	}
+	if (fadd->num_loop_jumptoend) {
+		orcus_int* points = (orcus_int*)realloc(fbase->loop_jumptoends, sizeof(orcus_int)*(fbase->num_loop_jumptoend+ fadd->num_loop_jumptoend));
+		if (!points)return false;
+		fbase->loop_jumptoends = points;
+		for (orcus_int i = 0; i < fadd->num_loop_jumptoend; i++) {
+			fbase->loop_jumptoends[fbase->num_loop_jumptoend + i] = fadd->loop_jumptoends[i] + fbase->number_instructions; //can't memcpy, we need to adjust the break keyword points by the offset introduced by appending to the end of the instructions
+		}
+		fbase->num_loop_jumptoend += fadd->num_loop_jumptoend;
+	}
+	if (fadd->num_loop_jumptostart) {
+		orcus_int* points = (orcus_int*)realloc(fbase->loop_jumptostarts, sizeof(orcus_int) * (fbase->num_loop_jumptostart + fadd->num_loop_jumptostart));
+		if (!points)return false;
+		fbase->loop_jumptostarts = points;
+		for (orcus_int i = 0; i < fadd->num_loop_jumptostart; i++) {
+			fbase->loop_jumptostarts[fbase->num_loop_jumptostart + i] = fadd->loop_jumptostarts[i] + fbase->number_instructions; //can't memcpy, we need to adjust the break keyword points by the offset introduced by appending to the end of the instructions
+		}
+		fbase->num_loop_jumptostart += fadd->num_loop_jumptostart;
+	}
+	if (fadd->num_gotos) {
+		for (orcus_int i = 0; i < fadd->num_gotos; i++) {
+			for (orcus_int n = 0; n < fadd->goto_pos_count[i]; n++) {
+				compiler_add_goto_jump(fbase, fadd->goto_alias+i, fadd->goto_positions[i][n] + fbase->number_instructions); //i can't be fucked to write optimized code to do this
+			}
+			if (fadd->goto_defined[i])
+				compiler_add_goto_label(fbase, fadd->goto_alias + i, fadd->goto_labelpos[i] + fbase->number_instructions); //ditto.
+		}
+	}
 	if (fadd->number_instructions) {
 		orcus_int nsiz = fbase->number_instructions + fadd->number_instructions;
 
@@ -950,6 +905,40 @@ inline bool merge_compiler_functions(compiler_function* fbase, compiler_function
 
 //like above, but does not free fadd
 inline bool merge_compiler_functions_nofree(compiler_function* fbase, const compiler_function* fadd) {
+	if (fadd->num_string_constants) {
+		compiler_token* tks = (compiler_token*)realloc(fbase->string_constant_tokens, sizeof(compiler_token) * (fadd->num_string_constants + fbase->num_string_constants));
+		if (!tks)return false;
+		fbase->string_constant_tokens = tks;
+		memcpy(fbase->string_constant_tokens + fbase->num_string_constants, fadd->string_constant_tokens, fadd->num_string_constants * sizeof(compiler_token));
+		fbase->num_string_constants += fadd->num_string_constants;
+	}
+	if (fadd->num_loop_jumptoend) {
+		orcus_int* points = (orcus_int*)realloc(fbase->loop_jumptoends, sizeof(orcus_int) * (fbase->num_loop_jumptoend + fadd->num_loop_jumptoend));
+		if (!points)return false;
+		fbase->loop_jumptoends = points;
+		for (orcus_int i = 0; i < fadd->num_loop_jumptoend; i++) {
+			fbase->loop_jumptoends[fbase->num_loop_jumptoend + i] = fadd->loop_jumptoends[i] + fbase->number_instructions; //can't memcpy, we need to adjust the break keyword points by the offset introduced by appending to the end of the instructions
+		}
+		fbase->num_loop_jumptoend += fadd->num_loop_jumptoend;
+	}
+	if (fadd->num_loop_jumptostart) {
+		orcus_int* points = (orcus_int*)realloc(fbase->loop_jumptostarts, sizeof(orcus_int) * (fbase->num_loop_jumptostart + fadd->num_loop_jumptostart));
+		if (!points)return false;
+		fbase->loop_jumptostarts = points;
+		for (orcus_int i = 0; i < fadd->num_loop_jumptostart; i++) {
+			fbase->loop_jumptostarts[fbase->num_loop_jumptostart + i] = fadd->loop_jumptostarts[i] + fbase->number_instructions; //can't memcpy, we need to adjust the break keyword points by the offset introduced by appending to the end of the instructions
+		}
+		fbase->num_loop_jumptostart += fadd->num_loop_jumptostart;
+	}
+	if (fadd->num_gotos) {
+		for (orcus_int i = 0; i < fadd->num_gotos; i++) {
+			for (orcus_int n = 0; n < fadd->goto_pos_count[i]; n++) {
+				compiler_add_goto_jump(fbase, fadd->goto_alias + i, fadd->goto_positions[i][n] + fbase->number_instructions); //i can't be fucked to write optimized code to do this
+			}
+			if (fadd->goto_defined[i])
+				compiler_add_goto_label(fbase, fadd->goto_alias + i, fadd->goto_labelpos[i] + fbase->number_instructions); //ditto.
+		}
+	}
 	if (fadd->number_instructions) {
 		orcus_int nsiz = fbase->number_instructions + fadd->number_instructions;
 
@@ -969,6 +958,75 @@ inline bool merge_compiler_functions_nofree(compiler_function* fbase, const comp
 		fbase->errorcode = fadd->errorcode;
 		fbase->token_error_num = fadd->token_error_num;
 	}
+	return true;
+}
+
+//finishes up stuff like gotos and constants
+inline bool compiler_function_finalize_addendums(compiler_function* f) {
+	for (orcus_int i = 0; i < f->num_gotos; i++) {
+		if (f->goto_defined[i]) {
+			for (orcus_int n = 0; n < f->goto_pos_count[i]; n++) {
+				orcus_int p = f->goto_positions[i][n];
+				orcus_int* j = (orcus_int*)(f->instructions + p);
+				*j = f->goto_labelpos[i] - p;
+			}
+		}
+		free(f->goto_positions[i]);
+	}
+	free(f->goto_positions);
+	free(f->goto_alias);
+	free(f->goto_defined);
+	free(f->goto_labelpos);
+	free(f->goto_pos_count);
+	f->goto_positions = nullptr;
+	f->goto_alias = nullptr;
+	f->goto_defined = nullptr;
+	f->goto_labelpos = nullptr;
+	f->goto_pos_count = nullptr;
+	f->num_gotos = 0;
+
+	orcus_int spaceneeded = 0; //track space needed so we can preallocate it in a big block
+	for (orcus_int i = 0; i < f->num_string_constants; i++) {
+		compiler_token s = f->string_constant_tokens[i];
+		spaceneeded += (s.num_chars + sizeof(orcus_opcode) - 1) / sizeof(orcus_opcode);
+		spaceneeded += 2;
+		spaceneeded += ORCUS_INSTRUCTIONS_PER_VARIABLE_SIZE * 2;
+	}
+	void* nptr = realloc(f->instructions, sizeof(orcus_opcode) * (spaceneeded + f->number_instructions));
+	if (!nptr) {
+		f->errorcode = ORCUS_COMPERR_MEMORY_ALLOCATION;
+		return false;
+	}
+	f->instructions = (orcus_opcode*)nptr;
+	memmove(f->instructions + spaceneeded, f->instructions, f->number_instructions * sizeof(orcus_opcode));
+
+	nptr = realloc(f->instruction_tokens, sizeof(orcus_int) * (spaceneeded + f->number_instructions));
+	if (!nptr) {
+		f->errorcode = ORCUS_COMPERR_MEMORY_ALLOCATION;
+		return false;
+	}
+	f->instruction_tokens = (orcus_int*)nptr;
+	memmove(f->instruction_tokens + spaceneeded, f->instruction_tokens, f->number_instructions * sizeof(orcus_int));
+	memset(f->instruction_tokens, 0, sizeof(orcus_int) * spaceneeded); //zero the tokens at the constant string assignment
+	orcus_int offset = 0;
+	for (orcus_int i = 0; i < f->num_string_constants; i++) {
+		compiler_token s = f->string_constant_tokens[i];
+		f->instructions[offset] = ORCUS_OPCODE_NSTR;
+		offset++;
+		*((orcus_int*)(f->instructions + offset)) = s.num_chars;
+		offset += ORCUS_INSTRUCTIONS_PER_VARIABLE_SIZE;
+		memcpy(f->instructions + offset, s.chars, s.num_chars);
+		offset += (s.num_chars + sizeof(orcus_opcode) - 1) / sizeof(orcus_opcode);
+		f->instructions[offset] = ORCUS_OPCODE_SCON;
+		offset++;
+		*((orcus_int*)(f->instructions + offset)) = i;
+		offset += ORCUS_INSTRUCTIONS_PER_VARIABLE_SIZE;
+	}
+	f->number_instructions += spaceneeded;
+
+	free(f->string_constant_tokens);
+	f->string_constant_tokens = nullptr;
+	f->num_string_constants = 0;
 	return true;
 }
 
@@ -1226,11 +1284,11 @@ inline void add_string_onto_stack(compiler_function* f,char* s,orcus_int len,orc
 
 
 //forward references for other complex functions
-orcus_int m_compile_read_var_statment(compiler_function* f, compiler_token* tokens, orcus_int num_tokens, orcus_int token_offset, compiler_info* i, compiler_function* postfix_function = nullptr);
-compiler_function* orcus_compile_tokens_to_bytecode(compiler_token* tokens, orcus_int num_tokens, orcus_int token_offset = 0, orcus_int* tokens_used = nullptr, compiler_info* ci = nullptr, compiler_function* in=nullptr);
+orcus_int m_compile_read_var_statment(compiler_function* f, compiler_token* tokens, orcus_int num_tokens, orcus_int token_offset, compiler_function* postfix_function = nullptr);
+orcus_int orcus_compile_tokens_to_bytecode(compiler_token* tokens, orcus_int num_tokens, orcus_int token_offset, compiler_function* out);
 
 
-orcus_int m_compile_read_variable(compiler_function* f, compiler_token* tokens,orcus_int num_tokens,orcus_int token_offset,compiler_info* i){
+orcus_int m_compile_read_variable(compiler_function* f, compiler_token* tokens,orcus_int num_tokens,orcus_int token_offset){
 	orcus_int initial_offset=token_offset;
 	compiler_token* cur_tok=m_compile_get_next_token(tokens,num_tokens,token_offset);
 	//if(!(cur_tok &&(cur_tok->token_flags & (TOKEN_VARIABLE | TOKEN_SCOPESPECIFIER) ))) {
@@ -1248,7 +1306,7 @@ orcus_int m_compile_read_variable(compiler_function* f, compiler_token* tokens,o
 		}
 		token_offset++;
 	}else if(cur_tok->token_flags & TOKEN_STATIC_STRING){
-		orcus_int ci=compiler_info_add_constant_string_from_token(i,cur_tok);
+		orcus_int ci=compiler_add_constant_string_from_token(f,cur_tok);
 		if (ci==-1){
 			f->errorcode=ORCUS_COMPERR_MEMORY_ALLOCATION;
 			f->token_error_num=token_offset;
@@ -1343,11 +1401,11 @@ orcus_int m_compile_read_variable(compiler_function* f, compiler_token* tokens,o
 			//read a variable. this could be implicit index value or an index.
 			compiler_function idxfunc;
 			memset(&idxfunc, 0, sizeof(compiler_function));
+			propigate_compiler_info_down(f, &idxfunc);
 			
-			orcus_int oao = i->args_out;
-			i->args_out = 1;
-			token_offset+= m_compile_read_var_statment(&idxfunc,tokens,num_tokens,token_offset,i);
-			i->args_out = oao;
+			idxfunc.num_args_out = 1;
+			token_offset+= m_compile_read_var_statment(&idxfunc,tokens,num_tokens,token_offset);
+			
 			if(idxfunc.errorcode){
 				f->errorcode = idxfunc.errorcode;
 				f->token_error_num = idxfunc.token_error_num;
@@ -1370,10 +1428,10 @@ orcus_int m_compile_read_variable(compiler_function* f, compiler_token* tokens,o
 
 					
 					token_offset++;
-					orcus_int oao = i->args_out;
-					i->args_out = 1;
-					orcus_int o= m_compile_read_var_statment(f,tokens,num_tokens,token_offset,i);
-					i->args_out = oao;
+					orcus_int oao = f->num_args_out;
+					f->num_args_out = 1;
+					orcus_int o= m_compile_read_var_statment(f,tokens,num_tokens,token_offset);
+					f->num_args_out = oao;
 					
 					//add_instruction(f, ORCUS_OPCODE_SWPT, token_offset);
 
@@ -1461,27 +1519,15 @@ orcus_int m_compile_read_variable(compiler_function* f, compiler_token* tokens,o
 			f->token_error_num = token_offset;
 			return 0;
 		}
-		/*
-		orcus_int ci=compiler_info_add_constant_string_from_token(i,cur_tok);
-		if (ci==-1){
-			f->errorcode=ORCUS_COMPERR_MEMORY_ALLOCATION;
-			f->token_error_num=token_offset;
-			return 0;
-		}
-		add_instruction(f,ORCUS_OPCODE_GCON, token_offset);
-		add_rawdata_bitwidth_size(f,ci, token_offset);
-		//add_string_onto_stack(f,cur_tok->chars,cur_tok->num_chars,token_offset);
-		add_instruction(f, g_op,token_offset);
-		*/
 		
 		token_offset++;
 	}else if(cur_tok->token_flags & TOKEN_MISC_OP && cur_tok->num_chars==1 && cur_tok->chars[0]=='('){ //parenthesis statement reading. we read (b+c) as a variable because it makes things easier on the compiler, and helps further segment the code to be more clean. after all, a+(b+c) is functionally equivalent to computing (b+c) then doing a+.
 		token_offset++;
 
-		orcus_int oao = i->args_out;
-		i->args_out = 1;
-		token_offset+=m_compile_read_var_statment(f,tokens,num_tokens,token_offset,i);
-		i->args_out = oao;
+		orcus_int oao = f->num_args_out;
+		f->num_args_out = 1;
+		token_offset+=m_compile_read_var_statment(f,tokens,num_tokens,token_offset);
+		f->num_args_out = oao;
 		if(f->errorcode){
 			return 0;
 		}
@@ -1523,6 +1569,7 @@ orcus_int m_compile_read_variable(compiler_function* f, compiler_token* tokens,o
 		
 		compiler_function funcargreadf;
 		memset(&funcargreadf, 0, sizeof(compiler_function));
+		propigate_compiler_info_down(f, &funcargreadf);
 
 		while(true){ //reading args
 			cur_tok=m_compile_get_next_token(tokens,num_tokens,token_offset);
@@ -1577,21 +1624,24 @@ orcus_int m_compile_read_variable(compiler_function* f, compiler_token* tokens,o
 		token_offset++;
 
 		add_instruction(&funcargreadf,ORCUS_OPCODE_CLS,0); //discards extra args in
-		orcus_int toks_consumed=0;
 		compiler_function ff;
 		memset(&ff, 0, sizeof(ff));
-		orcus_compile_tokens_to_bytecode(tokens, num_tokens, token_offset, &toks_consumed, nullptr, &ff);
+		ff.master = &ff;
+		//do not set master to us, needs to be isolated.
+		orcus_int toks_consumed=orcus_compile_tokens_to_bytecode(tokens, num_tokens, token_offset, &ff);
 		if(ff.errorcode){
 			f->errorcode=ff.errorcode;
 			f->token_error_num=ff.token_error_num;
 			return 0;
 		}
+		add_instruction(&ff, ORCUS_OPCODE_EXIT, token_offset);
+		compiler_function_finalize_addendums(&ff);
+
 		token_offset += toks_consumed;
 		merge_compiler_functions_nofree(f, &funcargreadf);
 		clear_compiler_function(&funcargreadf);
 		merge_compiler_functions_nofree(f,&ff);
 		clear_compiler_function(&ff);
-		add_instruction(f, ORCUS_OPCODE_EXIT, token_offset);
 		//*sizeoffunction = f->number_instructions-initial_bytecode_size;
 		*(binarydata*)(f->instructions + initial_bytecode_size - ORCUS_INSTRUCTIONS_PER_VARIABLE_SIZE) = f->number_instructions - initial_bytecode_size;
 		token_offset++; //advance 1 token to step over the ending end keyword
@@ -1638,7 +1688,7 @@ orcus_int m_compile_read_binary_op(compiler_function* f, compiler_token* tokens,
 }
 
 
-orcus_int m_compile_read_var_indexing(compiler_function* f, compiler_token* tokens,orcus_int num_tokens,orcus_int token_offset,compiler_info* i){
+orcus_int m_compile_read_var_indexing(compiler_function* f, compiler_token* tokens,orcus_int num_tokens,orcus_int token_offset){
 	orcus_int initial_offset=token_offset;
 	
 	while(true){
@@ -1668,10 +1718,10 @@ orcus_int m_compile_read_var_indexing(compiler_function* f, compiler_token* toke
 			}
 		}else if(cur_tok->chars[0]=='['){ //specific indexing
 			token_offset++;
-			orcus_int oao = i->args_out;
-			i->args_out = 1;
-			orcus_int o=m_compile_read_var_statment(f,tokens,num_tokens,token_offset,i);
-			i->args_out = oao;
+			orcus_int oao = f->num_args_out;
+			f->num_args_out = 1;
+			orcus_int o=m_compile_read_var_statment(f,tokens,num_tokens,token_offset);
+			f->num_args_out = oao;
 			if(f->errorcode){
 				return 0;
 			}else if(!o){
@@ -1705,7 +1755,7 @@ orcus_int m_compile_read_var_indexing(compiler_function* f, compiler_token* toke
 
 
 
-orcus_int m_compile_read_call_func(compiler_function* f, compiler_token* tokens,orcus_int num_tokens,orcus_int token_offset, orcus_int* args_in,compiler_info* i){
+orcus_int m_compile_read_call_func(compiler_function* f, compiler_token* tokens,orcus_int num_tokens,orcus_int token_offset, orcus_int* args_in){
 	orcus_int initial_offset=token_offset;
 
 	compiler_token* cur_tok=m_compile_get_next_token(tokens,num_tokens,token_offset);
@@ -1715,10 +1765,10 @@ orcus_int m_compile_read_call_func(compiler_function* f, compiler_token* tokens,
 	}
 	token_offset++;
 
-	orcus_int orig_args_out = i->args_out;
+	orcus_int orig_args_out = f->num_args_out;
 
 	while(true){
-		i->args_out = 1;
+		f->num_args_out = 1;
 		cur_tok=m_compile_get_next_token(tokens,num_tokens,token_offset);
 		if(!cur_tok){
 			f->errorcode=ORCUS_COMPERR_NO_MORE_TOKENS;
@@ -1729,7 +1779,7 @@ orcus_int m_compile_read_call_func(compiler_function* f, compiler_token* tokens,
 			break;
 		}
 		
-		orcus_int o=m_compile_read_var_statment(f,tokens,num_tokens, token_offset,i);
+		orcus_int o=m_compile_read_var_statment(f,tokens,num_tokens, token_offset);
 		if(f->errorcode){
 			return 0;
 		}else if(!o){
@@ -1754,14 +1804,14 @@ orcus_int m_compile_read_call_func(compiler_function* f, compiler_token* tokens,
 		}
 		
 	}
-	i->args_out= orig_args_out;
+	f->num_args_out = orig_args_out;
 
 
 	return token_offset-initial_offset;
 }
 
 //a var statment is something like 5+5
-orcus_int m_compile_read_var_statment(compiler_function* f, compiler_token* tokens,orcus_int num_tokens,orcus_int token_offset,compiler_info* i,compiler_function* postfix_function){
+orcus_int m_compile_read_var_statment(compiler_function* f, compiler_token* tokens, orcus_int num_tokens, orcus_int token_offset, compiler_function* postfix_function){
 	orcus_int initial_offset=token_offset;
 	/*bytecode op order:
 	1. get variable from environment
@@ -1786,12 +1836,15 @@ orcus_int m_compile_read_var_statment(compiler_function* f, compiler_token* toke
 	}
 	compiler_function func_var;
 	memset(&func_var, 0, sizeof(compiler_function));
+	propigate_compiler_info_down(f, &func_var);
 	compiler_function func_index;
 	compiler_function func_call;
 	compiler_function func_unary;
 	memset(&func_unary, 0, sizeof(compiler_function));
+	propigate_compiler_info_down(f, &func_unary);
 	compiler_function func_binary;
 	memset(&func_binary, 0, sizeof(compiler_function));
+	propigate_compiler_info_down(f, &func_binary);
 	
 	token_offset+=m_compile_read_unary_op(&func_unary,tokens,num_tokens,token_offset);
 	if(func_unary.errorcode){
@@ -1801,7 +1854,7 @@ orcus_int m_compile_read_var_statment(compiler_function* f, compiler_token* toke
 		return 0;
 	}
 	
-	token_offset+=m_compile_read_variable(&func_var,tokens,num_tokens,token_offset,i);
+	token_offset+=m_compile_read_variable(&func_var,tokens,num_tokens,token_offset);
 	if(func_var.errorcode){
 		f->errorcode = func_var.errorcode;
 		f->token_error_num = func_var.token_error_num;
@@ -1821,10 +1874,13 @@ orcus_int m_compile_read_var_statment(compiler_function* f, compiler_token* toke
 	bool firstpass = true;
 	while (true) {
 		memset(&func_complete, 0, sizeof(compiler_function));
+		propigate_compiler_info_down(f, &func_complete);
 		memset(&func_index, 0, sizeof(compiler_function));
+		propigate_compiler_info_down(f, &func_index);
 		memset(&func_call, 0, sizeof(compiler_function));
+		propigate_compiler_info_down(f, &func_call);
 
-		orcus_int vitokc = m_compile_read_var_indexing(&func_index, tokens, num_tokens, token_offset, i);
+		orcus_int vitokc = m_compile_read_var_indexing(&func_index, tokens, num_tokens, token_offset);
 		token_offset += vitokc;
 		if (func_index.errorcode) {
 			clear_compiler_function(&func_unary);
@@ -1837,7 +1893,7 @@ orcus_int m_compile_read_var_statment(compiler_function* f, compiler_token* toke
 		}
 
 		orcus_int f_args_in = 0;
-		orcus_int fctokc = m_compile_read_call_func(&func_call, tokens, num_tokens, token_offset, &f_args_in, i);
+		orcus_int fctokc = m_compile_read_call_func(&func_call, tokens, num_tokens, token_offset, &f_args_in);
 		token_offset += fctokc;
 		if (func_call.errorcode) {
 			clear_compiler_function(&func_unary);
@@ -1861,12 +1917,12 @@ orcus_int m_compile_read_var_statment(compiler_function* f, compiler_token* toke
 
 			add_instruction(&func_complete, ORCUS_OPCODE_CALL, token_offset - 1);
 			add_rawdata_bitwidth_size(&func_complete, f_args_in, token_offset - 1);
-			add_rawdata_bitwidth_size(&func_complete, i->args_out, token_offset - 1); //args out
-			i->args_out=0;
+			add_rawdata_bitwidth_size(&func_complete, f->num_args_out, token_offset - 1); //args out
+			f->num_args_out =0;
 		}
 		else if(vitokc){
 			clear_compiler_function(&func_call);
-			i->args_out--;
+			f->num_args_out--;
 			merge_compiler_functions_nofree(&func_complete, &func_var); clear_compiler_function(&func_var);
 			merge_compiler_functions_nofree(&func_complete, &func_index); clear_compiler_function(&func_index);
 		}
@@ -1874,7 +1930,7 @@ orcus_int m_compile_read_var_statment(compiler_function* f, compiler_token* toke
 			clear_compiler_function(&func_call);
 			clear_compiler_function(&func_index);
 			clear_compiler_function(&func_complete);
-			if(firstpass)i->args_out--;
+			if(firstpass)f->num_args_out--;
 		}
 		firstpass = false;
 		//after reading a function call, read ahead a bit more to check for a chained function call, or further indexing. do this here because function calls are looked at last, and the compiler will throw and error trying to read a call as its own statment. for example, a()() (call the result of calling a), or a()[1] (index the result of calling a)
@@ -1903,10 +1959,8 @@ orcus_int m_compile_read_var_statment(compiler_function* f, compiler_token* toke
 		return 0;
 	}
 	if(func_binary.number_instructions){ //if we registered a binary operator, then we need to read ahead to get the other statement, which means we get to do this whole thing again.
-		orcus_int oao = i->args_out;
-		i->args_out = 1;
-		token_offset+=m_compile_read_var_statment(&func_complete,tokens,num_tokens,token_offset,i,&func_binary);
-		i->args_out = oao;
+		func_complete.num_args_out = 1;
+		token_offset+=m_compile_read_var_statment(&func_complete, tokens, num_tokens, token_offset, &func_binary);
 	}else{
 		clear_compiler_function(&func_binary);
 	}
@@ -1919,7 +1973,7 @@ orcus_int m_compile_read_var_statment(compiler_function* f, compiler_token* toke
 
 
 //a statement is something like a=5, a[1]=5, a(5), or a[1](5)
-orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,orcus_int num_tokens,orcus_int token_offset,compiler_info* i){
+orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,orcus_int num_tokens,orcus_int token_offset){
 	orcus_int initial_offset=token_offset;
 	
 	compiler_token* cur_tok=m_compile_get_next_token(tokens,num_tokens,token_offset);
@@ -1934,10 +1988,9 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 		while(true){
 			compiler_function n;
 			memset(&n, 0, sizeof(compiler_function));
-			orcus_int oao = i->args_out;
-			i->args_out = 1;
-			orcus_int o=m_compile_read_var_statment(&n,tokens,num_tokens,token_offset,i);
-			i->args_out = oao;
+			propigate_compiler_info_down(f, &n);
+			n.num_args_out = 1;
+			orcus_int o=m_compile_read_var_statment(&n,tokens,num_tokens,token_offset);
 			cur_tok = m_compile_get_next_token(tokens, num_tokens, token_offset + o);
 			if(!cur_tok || (cur_tok->token_flags & TOKEN_MISC_OP && cur_tok->num_chars==1 && cur_tok->chars[0]=='=')){
 				clear_compiler_function(&n);
@@ -1964,7 +2017,7 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 	}else if (cur_tok->token_flags & TOKEN_ENV_VAR && num_tokens>token_offset+1) {//goto labels
 		compiler_token* nt = tokens+token_offset + 1;
 		if (nt->token_flags & TOKEN_MISC_OP && nt->num_chars == 1 && nt->chars[0] == ':') {
-			if (!compiler_info_add_goto_label(i, cur_tok, f->number_instructions + i->additional_instructions)) {
+			if (!compiler_add_goto_label(f, cur_tok, f->number_instructions)) {
 				f->errorcode = ORCUS_COMPERR_MEMORY_ALLOCATION;
 				f->token_error_num = token_offset;
 				return 0;
@@ -1975,7 +2028,7 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 
 
 
-	i->args_out = 0;
+	f->num_args_out = 0;
 	orcus_opcode* set_instructs = nullptr;
 	orcus_opcode get_instruction = ORCUS_OPCODE_GENV;
 	orcus_opcode set_instruction = ORCUS_OPCODE_SENV;
@@ -1983,7 +2036,7 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 	compiler_function* vargetresidualfuncs = nullptr;
 	compiler_function* varsetresidualfuncs = nullptr;
 	while (true) {
-		void* nptr=realloc(set_instructs, sizeof(orcus_opcode) * (i->args_out + 1));
+		void* nptr=realloc(set_instructs, sizeof(orcus_opcode) * (f->num_args_out + 1));
 		if (!nptr) {
 			f->errorcode = ORCUS_COMPERR_MEMORY_ALLOCATION;
 			f->token_error_num = token_offset;
@@ -1995,7 +2048,7 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 		}
 		set_instructs = (orcus_opcode*)nptr;
 
-		nptr = realloc(varfuncs, sizeof(compiler_function) * (i->args_out + 1));
+		nptr = realloc(varfuncs, sizeof(compiler_function) * (f->num_args_out + 1));
 		if (!nptr) {
 			f->errorcode = ORCUS_COMPERR_MEMORY_ALLOCATION;
 			f->token_error_num = token_offset;
@@ -2006,9 +2059,10 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 			return 0;
 		}
 		varfuncs = (compiler_function*)nptr;
-		memset(varfuncs + i->args_out,0,sizeof(compiler_function));
+		memset(varfuncs + f->num_args_out,0,sizeof(compiler_function));
+		propigate_compiler_info_down(f, varfuncs + f->num_args_out);
 
-		nptr = realloc(vargetresidualfuncs, sizeof(compiler_function) * (i->args_out + 1));
+		nptr = realloc(vargetresidualfuncs, sizeof(compiler_function) * (f->num_args_out + 1));
 		if (!nptr) {
 			f->errorcode = ORCUS_COMPERR_MEMORY_ALLOCATION;
 			f->token_error_num = token_offset;
@@ -2019,9 +2073,10 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 			return 0;
 		}
 		vargetresidualfuncs = (compiler_function*)nptr;
-		memset(vargetresidualfuncs + i->args_out, 0, sizeof(compiler_function));
+		memset(vargetresidualfuncs + f->num_args_out, 0, sizeof(compiler_function));
+		propigate_compiler_info_down(f, vargetresidualfuncs + f->num_args_out);
 
-		nptr = realloc(varsetresidualfuncs, sizeof(compiler_function) * (i->args_out + 1));
+		nptr = realloc(varsetresidualfuncs, sizeof(compiler_function) * (f->num_args_out + 1));
 		if (!nptr) {
 			f->errorcode = ORCUS_COMPERR_MEMORY_ALLOCATION;
 			f->token_error_num = token_offset;
@@ -2032,7 +2087,8 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 			return 0;
 		}
 		varsetresidualfuncs = (compiler_function*)nptr;
-		memset(varsetresidualfuncs + i->args_out, 0, sizeof(compiler_function));
+		memset(varsetresidualfuncs + f->num_args_out, 0, sizeof(compiler_function));
+		propigate_compiler_info_down(f, varsetresidualfuncs + f->num_args_out);
 
 		get_instruction = ORCUS_OPCODE_GENV_KCS;
 		set_instruction = ORCUS_OPCODE_SENV_KCS;
@@ -2054,7 +2110,7 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 			if (!cur_tok) {
 				f->token_error_num = token_offset;
 				f->errorcode = ORCUS_COMPERR_NO_MORE_TOKENS;
-				for (orcus_int n = 0; n < i->args_out; n++) {
+				for (orcus_int n = 0; n < f->num_args_out; n++) {
 					clear_compiler_function(varfuncs + n);
 					clear_compiler_function(vargetresidualfuncs + n);
 					clear_compiler_function(varsetresidualfuncs + n);
@@ -2071,7 +2127,7 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 		if (!(cur_tok->token_flags & TOKEN_ENV_VAR)) {
 			f->token_error_num = token_offset;
 			f->errorcode = ORCUS_COMPERR_NO_NAMED_VARIABLE;
-			for (orcus_int n = 0; n < i->args_out; n++) {
+			for (orcus_int n = 0; n < f->num_args_out; n++) {
 				clear_compiler_function(varfuncs + n);
 				clear_compiler_function(vargetresidualfuncs + n);
 				clear_compiler_function(varsetresidualfuncs + n);
@@ -2084,9 +2140,9 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 		}
 
 
-		compiler_function* funcvarblock = varfuncs + i->args_out;//new_compiler_function();
-		compiler_function* funcvarget = vargetresidualfuncs + i->args_out;//new_compiler_function();
-		compiler_function* funcvarset = varsetresidualfuncs + i->args_out;//new_compiler_function();
+		compiler_function* funcvarblock = varfuncs + f->num_args_out;//new_compiler_function();
+		compiler_function* funcvarget = vargetresidualfuncs + f->num_args_out;//new_compiler_function();
+		compiler_function* funcvarset = varsetresidualfuncs + f->num_args_out;//new_compiler_function();
 
 		add_instruction(funcvarget, get_instruction, token_offset);
 		add_raw_string_onto_stack(funcvarget, cur_tok->chars, cur_tok->num_chars, token_offset);
@@ -2104,7 +2160,7 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 				if (!should_set)break;
 				f->token_error_num = token_offset;
 				f->errorcode = ORCUS_COMPERR_NO_MORE_TOKENS;
-				for (orcus_int n = 0; n <= i->args_out; n++) {
+				for (orcus_int n = 0; n <= f->num_args_out; n++) {
 					clear_compiler_function(varfuncs + n);
 					clear_compiler_function(vargetresidualfuncs + n);
 					clear_compiler_function(varsetresidualfuncs + n);
@@ -2132,15 +2188,13 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 				if (cur_tok->chars[0] == '[') { //explicit index
 					get_instruction = ORCUS_OPCODE_GET;
 					set_instruction = ORCUS_OPCODE_SET;
-					orcus_int oao = i->args_out;
-					i->args_out = 1;
-					token_offset += m_compile_read_var_statment(funcvarblock, tokens, num_tokens, token_offset, i);
-					i->args_out = oao;
+					funcvarblock->num_args_out = 1;
+					token_offset += m_compile_read_var_statment(funcvarblock, tokens, num_tokens, token_offset);
 					cur_tok = m_compile_get_next_token(tokens, num_tokens, token_offset);
 					if (!(cur_tok && cur_tok->token_flags & TOKEN_MISC_OP && cur_tok->num_chars == 1 && cur_tok->chars[0] == ']')) {
 						f->token_error_num = token_offset;
 						f->errorcode = ORCUS_COMPERR_WRONG_SYMBOL;
-						for (orcus_int n = 0; n <= i->args_out; n++) {
+						for (orcus_int n = 0; n <= f->num_args_out; n++) {
 							clear_compiler_function(varfuncs + n);
 							clear_compiler_function(vargetresidualfuncs + n);
 							clear_compiler_function(varsetresidualfuncs + n);
@@ -2162,7 +2216,7 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 					if (!(cur_tok)) {
 						f->token_error_num = token_offset;
 						f->errorcode = ORCUS_COMPERR_NO_MORE_TOKENS;
-						for (orcus_int n = 0; n <= i->args_out; n++) {
+						for (orcus_int n = 0; n <= f->num_args_out; n++) {
 							clear_compiler_function(varfuncs + n);
 							clear_compiler_function(vargetresidualfuncs + n);
 							clear_compiler_function(varsetresidualfuncs + n);
@@ -2176,7 +2230,7 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 					else if (!(cur_tok->token_flags & TOKEN_ENV_VAR)) {
 						f->token_error_num = token_offset;
 						f->errorcode = ORCUS_COMPERR_NO_NAMED_VARIABLE;
-						for (orcus_int n = 0; n <= i->args_out; n++) {
+						for (orcus_int n = 0; n <= f->num_args_out; n++) {
 							clear_compiler_function(varfuncs + n);
 							clear_compiler_function(vargetresidualfuncs + n);
 							clear_compiler_function(varsetresidualfuncs + n);
@@ -2223,13 +2277,14 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 					clear_compiler_function(funcvarset);
 				}
 				compiler_function prepend;
-				memset(&prepend + i->args_out, 0, sizeof(compiler_function));
+				memset(&prepend + f->num_args_out, 0, sizeof(compiler_function));
+				propigate_compiler_info_down(f, &prepend);
 
-				token_offset += m_compile_read_call_func(&prepend, tokens, num_tokens, token_offset, &ain, i); //append to f because function args come before the function.
+				token_offset += m_compile_read_call_func(&prepend, tokens, num_tokens, token_offset, &ain); //append to f because function args come before the function.
 				if (prepend.errorcode) {
 					f->errorcode = prepend.errorcode;
 					f->token_error_num = prepend.token_error_num;
-					for (orcus_int n = 0; n <= i->args_out; n++) {
+					for (orcus_int n = 0; n <= f->num_args_out; n++) {
 						clear_compiler_function(varfuncs + n);
 						clear_compiler_function(vargetresidualfuncs + n);
 						clear_compiler_function(varsetresidualfuncs + n);
@@ -2266,10 +2321,10 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 
 
 		if (should_set) {
-			set_instructs[i->args_out] = set_instruction;
-			i->args_out++;
+			set_instructs[f->num_args_out] = set_instruction;
+			f->num_args_out++;
 		}
-		else if (i->args_out) {
+		else if (f->num_args_out) {
 			f->errorcode = ORCUS_COMPERR_REQUIRES_EXPLICIT_ASSIGNMENT;
 			f->token_error_num = token_offset;
 			return 0;
@@ -2277,10 +2332,10 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 
 		cur_tok = m_compile_get_next_token(tokens, num_tokens, token_offset);
 		if (!cur_tok) {
-			if (i->args_out) {
+			if (f->num_args_out) {
 				f->token_error_num = token_offset;
 				f->errorcode = ORCUS_COMPERR_NO_MORE_TOKENS;
-				for (orcus_int n = 0; n < i->args_out; n++) {
+				for (orcus_int n = 0; n < f->num_args_out; n++) {
 					clear_compiler_function(varfuncs + n);
 					clear_compiler_function(vargetresidualfuncs + n);
 					clear_compiler_function(varsetresidualfuncs + n);
@@ -2307,12 +2362,12 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 
 
 	//then check what we're doing with this. this is either a set operation, or a self-modifying set operation
-	if(i->args_out){
+	if(f->num_args_out){
 		cur_tok = m_compile_get_next_token(tokens, num_tokens, token_offset);
 		if (!cur_tok) {
 			f->token_error_num = token_offset;
 			f->errorcode = ORCUS_COMPERR_NO_MORE_TOKENS;
-			for (orcus_int n = 0; n < i->args_out; n++) {
+			for (orcus_int n = 0; n < f->num_args_out; n++) {
 				clear_compiler_function(varfuncs + n);
 				clear_compiler_function(vargetresidualfuncs + n);
 				clear_compiler_function(varsetresidualfuncs + n);
@@ -2326,7 +2381,7 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 		else if (!(cur_tok->token_flags & (TOKEN_MISC_OP | TOKEN_SELFMODIFY_OP))) {
 			f->token_error_num = token_offset;
 			f->errorcode = ORCUS_COMPERR_WRONG_SYMBOL;
-			for (orcus_int n = 0; n < i->args_out; n++) {
+			for (orcus_int n = 0; n < f->num_args_out; n++) {
 				clear_compiler_function(varfuncs + n);
 				clear_compiler_function(vargetresidualfuncs + n);
 				clear_compiler_function(varsetresidualfuncs + n);
@@ -2346,22 +2401,25 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 
 			compiler_function assfunc;
 			memset(&assfunc, 0, sizeof(compiler_function));
-			orcus_int total_args_out = i->args_out;
-			while (i->args_out) {
+			propigate_compiler_info_down(f, &assfunc);
+			orcus_int total_args_out = f->num_args_out;
+			while (f->num_args_out) {
 				//i->args_out--; //decrement args out in the m_compile_read_var_statment function call.
 
 				compiler_function argfunc;
 				memset(&argfunc, 0, sizeof(compiler_function));
-
+				propigate_compiler_info_down(f, &argfunc);
+				argfunc.num_args_out = f->num_args_out;
 				
 
-				orcus_int starting_args_out = i->args_out;
+				orcus_int starting_args_out = f->num_args_out;
 
-				token_offset += m_compile_read_var_statment(&argfunc, tokens, num_tokens, token_offset, i);
+				token_offset += m_compile_read_var_statment(&argfunc, tokens, num_tokens, token_offset);
+				f->num_args_out = argfunc.num_args_out;
 				if (argfunc.errorcode) {
 					f->errorcode = argfunc.errorcode;
 					f->token_error_num = argfunc.token_error_num;
-					for (orcus_int n = 0; n < i->args_out; n++) {
+					for (orcus_int n = 0; n < total_args_out; n++) {
 						clear_compiler_function(varfuncs + n);
 						clear_compiler_function(vargetresidualfuncs + n);
 						clear_compiler_function(varsetresidualfuncs + n);
@@ -2375,10 +2433,10 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 
 				
 
-				orcus_int args_processed = starting_args_out - i->args_out;
+				orcus_int args_processed = starting_args_out - f->num_args_out;
 				if (args_processed > 1) {
 					
-					for (orcus_int n = i->args_out; n < starting_args_out; n++) {
+					for (orcus_int n = f->num_args_out; n < starting_args_out; n++) {
 						merge_compiler_functions_nofree(&argfunc, varfuncs + total_args_out - n - 1);
 						clear_compiler_function(varfuncs + total_args_out - n - 1);
 						//add_instruction(&argfunc, set_instructs[n], ito);
@@ -2389,17 +2447,17 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 					}
 				}
 				else {
-					merge_compiler_functions_nofree(&argfunc, varfuncs + total_args_out - i->args_out - 1);
-					clear_compiler_function(varfuncs + total_args_out - i->args_out - 1);
+					merge_compiler_functions_nofree(&argfunc, varfuncs + total_args_out - f->num_args_out -1);
+					clear_compiler_function(varfuncs + total_args_out - f->num_args_out - 1);
 					//add_instruction(&argfunc, set_instructs[i->args_out], ito);
-					merge_compiler_functions_nofree(&argfunc, varsetresidualfuncs + total_args_out - i->args_out - 1);
-					clear_compiler_function(varsetresidualfuncs + total_args_out - i->args_out - 1);
+					merge_compiler_functions_nofree(&argfunc, varsetresidualfuncs + total_args_out - f->num_args_out - 1);
+					clear_compiler_function(varsetresidualfuncs + total_args_out - f->num_args_out - 1);
 
-					clear_compiler_function(vargetresidualfuncs + total_args_out - i->args_out - 1);
+					clear_compiler_function(vargetresidualfuncs + total_args_out - f->num_args_out - 1);
 				}
 
 				cur_tok = m_compile_get_next_token(tokens, num_tokens, token_offset);
-				if (i->args_out) { //if we need another arg...
+				if (f->num_args_out) { //if we need another arg...
 					if (!cur_tok) { //we need tokens
 						f->token_error_num = token_offset;
 						f->errorcode = ORCUS_COMPERR_NO_MORE_TOKENS;
@@ -2418,7 +2476,7 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 					else {
 						f->errorcode = ORCUS_COMPERR_REQUIRES_EXPLICIT_ASSIGNMENT;
 						f->token_error_num = token_offset;
-						for (orcus_int n = 0; n < i->args_out; n++) {
+						for (orcus_int n = 0; n < total_args_out; n++) {
 							clear_compiler_function(varfuncs + n);
 							clear_compiler_function(vargetresidualfuncs + n);
 							clear_compiler_function(varsetresidualfuncs + n);
@@ -2444,10 +2502,10 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 
 		}
 		else if (cur_tok->token_flags & TOKEN_SELFMODIFY_OP) { //assignment & modification
-			if (i->args_out>1) { //self-modification can only work on 1 var.
+			if (f->num_args_out >1) { //self-modification can only work on 1 var.
 				f->errorcode = ORCUS_COMPERR_REQUIRES_EXPLICIT_ASSIGNMENT;
 				f->token_error_num = token_offset;
-				for (orcus_int n = 0; n < i->args_out; n++) {
+				for (orcus_int n = 0; n < f->num_args_out; n++) {
 					clear_compiler_function(varfuncs + n);
 					clear_compiler_function(vargetresidualfuncs + n);
 					clear_compiler_function(varsetresidualfuncs + n);
@@ -2483,10 +2541,10 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 			token_offset++;
 
 			if (cur_tok->token_flags & TOKEN_BINARY_OP) {
-				orcus_int oao= i->args_out;
-				i->args_out = 1;
-				token_offset += m_compile_read_var_statment(f, tokens, num_tokens, token_offset, i);
-				i->args_out = oao;
+				orcus_int oao= f->num_args_out;
+				f->num_args_out = 1;
+				token_offset += m_compile_read_var_statment(f, tokens, num_tokens, token_offset);
+				f->num_args_out = oao;
 				if (f->errorcode) {
 					free(varfuncs);
 					free(vargetresidualfuncs);
@@ -2520,7 +2578,7 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 			//delete_compiler_function(getvarfunc);
 			f->token_error_num = token_offset;
 			f->errorcode = ORCUS_COMPERR_NO_OPERATION_FOUND;
-			for (orcus_int n = 0; n < i->args_out; n++) {
+			for (orcus_int n = 0; n < f->num_args_out; n++) {
 				clear_compiler_function(varfuncs + n);
 				clear_compiler_function(vargetresidualfuncs + n);
 				clear_compiler_function(varsetresidualfuncs + n);
@@ -2547,32 +2605,37 @@ orcus_int m_compile_read_statment(compiler_function* f, compiler_token* tokens,o
 
 
 
-orcus_int m_compile_parse_while_loop(compiler_function* f, compiler_token* tokens,orcus_int num_tokens,orcus_int token_offset,compiler_info* ci){
+orcus_int m_compile_parse_while_loop(compiler_function* f, compiler_token* tokens,orcus_int num_tokens,orcus_int token_offset){
 	orcus_int initial_offset=token_offset;
 	compiler_token* cur_tok=m_compile_get_next_token(tokens,num_tokens,token_offset);
-	
-	compiler_info oci=*ci;
-	
 	
 	if( !(cur_tok&& cur_tok->token_flags & TOKEN_KEYWORD && token_matches_chars(cur_tok,"while")) ){
 		return 0;
 	}
 	token_offset++;
 	
+	bool former_in_loop = f->in_loop;
+	orcus_int former_num_loop_jumptostart = f->num_loop_jumptostart;
+	orcus_int* former_loop_jumptostarts = f->loop_jumptostarts;
+	orcus_int former_num_loop_jumptoend=f->num_loop_jumptoend;
+	orcus_int* former_loop_jumptoends=f->loop_jumptoends;
 	
-	ci->in_loop=true;
-	ci->loop_jumppoint_start=f->number_instructions;
-	ci->loop_endpoint_ref_count=0;
-	ci->loop_endpoint_ref_pos=nullptr;
-	
-	orcus_int oao = ci->args_out;
-	ci->args_out = 1;
-	token_offset+=m_compile_read_var_statment(f,tokens,num_tokens,token_offset,ci);
-	ci->args_out = oao;
+	orcus_int loop_starting_position= f->number_instructions;
+
+	f->in_loop = true;
+	f->num_loop_jumptoend = 0;
+	f->loop_jumptoends = nullptr;
+	f->num_loop_jumptostart = 0;
+	f->loop_jumptostarts = nullptr;
+
+	orcus_int oao = f->num_args_out;
+	f->num_args_out = 1;
+	token_offset+=m_compile_read_var_statment(f,tokens,num_tokens,token_offset);
+	f->num_args_out = oao;
 	if(f->errorcode)return 0;
 	
 	add_instruction(f, ORCUS_OPCODE_JRNI, token_offset);
-	compiler_info_add_loop_endjump(ci,f->number_instructions);
+	compiler_add_loop_endjump(f,f->number_instructions);
 	add_rawdata_bitwidth_size(f,0,token_offset);
 	
 	cur_tok=m_compile_get_next_token(tokens,num_tokens,token_offset);
@@ -2589,10 +2652,10 @@ orcus_int m_compile_parse_while_loop(compiler_function* f, compiler_token* token
 	
 	while(true){
 		orcus_int consumed=0;
-		ci->additional_instructions=oci.additional_instructions+f->number_instructions;
 		compiler_function bf;
 		memset(&bf, 0, sizeof(bf));
-		orcus_compile_tokens_to_bytecode(tokens, num_tokens, token_offset, &consumed, ci, &bf);
+		propigate_compiler_info_down(f, &bf);
+		consumed=orcus_compile_tokens_to_bytecode(tokens, num_tokens, token_offset, &bf);
 		if (bf.errorcode) {
 			f->errorcode=bf.errorcode;
 			f->token_error_num=bf.token_error_num;
@@ -2621,53 +2684,40 @@ orcus_int m_compile_parse_while_loop(compiler_function* f, compiler_token* token
 	}
 	
 	add_instruction(f, ORCUS_OPCODE_JMPR, token_offset-1);
-	add_rawdata_bitwidth_size(f, ci->loop_jumppoint_start-f->number_instructions,token_offset-1);
+	add_rawdata_bitwidth_size(f, loop_starting_position -f->number_instructions,token_offset-1);
 
-	for(orcus_int i=0;i<ci->loop_endpoint_ref_count;i++){
-		if (ci->loop_endpoint_ref_pos[i] > f->number_instructions) { //todo: actually fix whatever part of the compiler causes the jump to point out of bounds
-#ifdef ORCUS_DEBUG
-			printf("compiler: a loop requested a jump to point %zi, but there are only %zi instructions. skipping setting of jump position.\n", ci->loop_endpoint_ref_pos[i],f->number_instructions);
-#endif
-		}
-		else {
-			*(orcus_int*)(f->instructions + ci->loop_endpoint_ref_pos[i]) = f->number_instructions - ci->loop_endpoint_ref_pos[i];
-		}
+	for(orcus_int i=0;i<f->num_loop_jumptoend;i++){
+		*(orcus_int*)(f->instructions + f->loop_jumptoends[i]) = f->number_instructions - f->loop_jumptoends[i];
 	}
-	free(ci->loop_endpoint_ref_pos);
-	
 
-	oci.conditional_defaultcase = ci->conditional_defaultcase;
-	oci.conditional_jumppoint_init = ci->conditional_jumppoint_init;
-	oci.conditional_jumptoend_count = ci->conditional_jumptoend_count;
-	oci.conditional_jumptoend_points= ci->conditional_jumptoend_points;
-	propogate_compiler_info(&oci, ci);
-	*ci=oci;
+	for (orcus_int i = 0; i < f->num_loop_jumptostart; i++) {
+		*(orcus_int*)(f->instructions + f->loop_jumptostarts[i]) = loop_starting_position- f->loop_jumptostarts[i];
+	}
+	free(f->loop_jumptoends);
+	free(f->loop_jumptostarts);
 	
+	f->in_loop = former_in_loop;
+	f->num_loop_jumptoend = former_num_loop_jumptoend;
+	f->loop_jumptoends = former_loop_jumptoends;
+	f->num_loop_jumptostart = former_num_loop_jumptostart;
+	f->loop_jumptostarts = former_loop_jumptostarts;
+
 	return token_offset-initial_offset;
 }
 
-orcus_int m_compile_parse_if_statement(compiler_function* f, compiler_token* tokens,orcus_int num_tokens,orcus_int token_offset,compiler_info* ci){
+orcus_int m_compile_parse_if_statement(compiler_function* f, compiler_token* tokens,orcus_int num_tokens,orcus_int token_offset){
 	orcus_int initial_offset=token_offset;
 	compiler_token* cur_tok=m_compile_get_next_token(tokens,num_tokens,token_offset);
-	
-	compiler_info oci=*ci;
-	
 	
 	if( !(cur_tok&& cur_tok->token_flags & TOKEN_KEYWORD && token_matches_chars(cur_tok,"if")) ){
 		return 0;
 	}
 	token_offset++;
-	
-	ci->in_conditional=true;
-	ci->conditional_jumppoint_init=f->number_instructions;
-	ci->conditional_jumptoend_count=0;
-	ci->conditional_jumptoend_points=nullptr;
-	ci->conditional_defaultcase=false;
-	
-	orcus_int oao = ci->args_out;
-	ci->args_out = 1;
-	orcus_int o=m_compile_read_var_statment(f,tokens,num_tokens,token_offset,ci);
-	ci->args_out = oao;
+
+	orcus_int oao = f->num_args_out;
+	f->num_args_out = 1;
+	orcus_int o=m_compile_read_var_statment(f,tokens,num_tokens,token_offset);
+	f->num_args_out = oao;
 	if(f->errorcode){
 		return 0;
 	}else if(!o){
@@ -2684,19 +2734,23 @@ orcus_int m_compile_parse_if_statement(compiler_function* f, compiler_token* tok
 		return 0;
 	}
 	
+	bool defaultcase = false;
+	orcus_int init_jump_point;
+	orcus_int num_jumptoends = 0;
+	orcus_int* jump_to_end_points = nullptr;
 	
 	add_instruction(f, ORCUS_OPCODE_JRNI, token_offset);
-	ci->conditional_jumppoint_init=f->number_instructions;
+	init_jump_point = f->number_instructions;
 	add_rawdata_bitwidth_size(f,0,token_offset);
 	token_offset++;
 
 
 	while(true){
 		orcus_int consumed=0;
-		ci->additional_instructions=oci.additional_instructions+f->number_instructions;
 		compiler_function bf;
 		memset(&bf, 0, sizeof(bf));
-		orcus_compile_tokens_to_bytecode(tokens, num_tokens, token_offset, &consumed, ci,&bf);
+		propigate_compiler_info_down(f, &bf);
+		consumed=orcus_compile_tokens_to_bytecode(tokens, num_tokens, token_offset, &bf);
 		if(bf.errorcode){
 			f->errorcode=bf.errorcode;
 			f->token_error_num=bf.token_error_num;
@@ -2713,16 +2767,26 @@ orcus_int m_compile_parse_if_statement(compiler_function* f, compiler_token* tok
 			return 0;
 		}else if(cur_tok->token_flags & TOKEN_KEYWORD && token_matches_chars(cur_tok,"elseif") ){
 			add_instruction(f, ORCUS_OPCODE_JMPR, token_offset);
-			compiler_info_add_conditional_endjump(ci,f->number_instructions);
+
+			orcus_int* njtep=(orcus_int*)realloc(jump_to_end_points, sizeof(orcus_int) * (num_jumptoends + 1));
+			if (!njtep) {
+				f->errorcode = ORCUS_COMPERR_MEMORY_ALLOCATION;
+				f->token_error_num = token_offset;
+				return 0;
+			}
+			jump_to_end_points = njtep;
+			jump_to_end_points[num_jumptoends] = f->number_instructions;
+			num_jumptoends++;
+
 			add_rawdata_bitwidth_size(f,0,token_offset);
 			token_offset++;
 
-			*(orcus_int*)(f->instructions + ci->conditional_jumppoint_init) = f->number_instructions - ci->conditional_jumppoint_init;
+			*(orcus_int*)(f->instructions + init_jump_point) = f->number_instructions - init_jump_point;
 			
-			orcus_int oao = ci->args_out;
-			ci->args_out = 1;
-			o=m_compile_read_var_statment(f,tokens,num_tokens,token_offset,ci);
-			ci->args_out = oao;
+			orcus_int oao = f->num_args_out;
+			f->num_args_out = 1;
+			o=m_compile_read_var_statment(f,tokens,num_tokens,token_offset);
+			f->num_args_out = oao;
 			if(f->errorcode){
 				return 0;
 			}else if(!o){
@@ -2733,7 +2797,7 @@ orcus_int m_compile_parse_if_statement(compiler_function* f, compiler_token* tok
 			token_offset+=o;
 			
 			add_instruction(f, ORCUS_OPCODE_JRNI, token_offset);
-			ci->conditional_jumppoint_init=f->number_instructions;
+			init_jump_point =f->number_instructions;
 			add_rawdata_bitwidth_size(f,0,token_offset);
 			
 			cur_tok=m_compile_get_next_token(tokens,num_tokens,token_offset);
@@ -2746,21 +2810,31 @@ orcus_int m_compile_parse_if_statement(compiler_function* f, compiler_token* tok
 			
 		}else if(cur_tok->token_flags & TOKEN_KEYWORD && token_matches_chars(cur_tok,"else") ){
 			add_instruction(f, ORCUS_OPCODE_JMPR, token_offset);
-			compiler_info_add_conditional_endjump(ci, f->number_instructions);
+
+			orcus_int* njtep = (orcus_int*)realloc(jump_to_end_points, sizeof(orcus_int) * (num_jumptoends + 1));
+			if (!njtep) {
+				f->errorcode = ORCUS_COMPERR_MEMORY_ALLOCATION;
+				f->token_error_num = token_offset;
+				return 0;
+			}
+			jump_to_end_points = njtep;
+			jump_to_end_points[num_jumptoends] = f->number_instructions;
+			num_jumptoends++;
+
 			add_rawdata_bitwidth_size(f, 0, token_offset);
 
 			token_offset++;
-			*(orcus_int*)(f->instructions + ci->conditional_jumppoint_init) = f->number_instructions - ci->conditional_jumppoint_init;
-			ci->conditional_defaultcase = true;
+			*(orcus_int*)(f->instructions + init_jump_point) = f->number_instructions - init_jump_point;
+			defaultcase = true;
 		}else if(cur_tok->token_flags & TOKEN_KEYWORD && token_matches_chars(cur_tok,"end") ){
 			token_offset++;
 			
-			if(!ci->conditional_defaultcase){ //if we didn't fall through to else, we have to set the jump point of the last if check to here.
-				*(orcus_int*)(f->instructions+ci->conditional_jumppoint_init) = f->number_instructions-ci->conditional_jumppoint_init;
+			if(!defaultcase){ //if we didn't fall through to else, we have to set the jump point of the last if check to here.
+				*(orcus_int*)(f->instructions+ init_jump_point) = f->number_instructions- init_jump_point;
 			}
 			
-			for(orcus_int i=0;i<ci->conditional_jumptoend_count;i++){
-				*(orcus_int*)(f->instructions+ci->conditional_jumptoend_points[i]) = f->number_instructions - ci->conditional_jumptoend_points[i];
+			for(orcus_int i=0;i< num_jumptoends;i++){
+				*(orcus_int*)(f->instructions+ jump_to_end_points[i]) = f->number_instructions - jump_to_end_points[i];
 			}
 			
 			break;
@@ -2772,20 +2846,13 @@ orcus_int m_compile_parse_if_statement(compiler_function* f, compiler_token* tok
 		
 	}
 	
-	free(ci->conditional_jumptoend_points);
-
-	//some data we need to propogate back upwards.
-	propogate_compiler_info(&oci,ci);
-	oci.loop_jumppoint_start = ci->loop_jumppoint_start;
-	oci.loop_endpoint_ref_count = ci->loop_endpoint_ref_count;
-	oci.loop_endpoint_ref_pos = ci->loop_endpoint_ref_pos;
-	*ci=oci;
+	free(jump_to_end_points);
 
 	return token_offset-initial_offset;
 }
 
 
-orcus_int m_compile_read_keyword_block(compiler_function* f, compiler_token* tokens,orcus_int num_tokens,orcus_int token_offset,compiler_info* ci){
+orcus_int m_compile_read_keyword_block(compiler_function* f, compiler_token* tokens,orcus_int num_tokens,orcus_int token_offset){
 	orcus_int initial_offset=token_offset;
 	
 	compiler_token* cur_tok=m_compile_get_next_token(tokens,num_tokens,token_offset);
@@ -2796,9 +2863,9 @@ orcus_int m_compile_read_keyword_block(compiler_function* f, compiler_token* tok
 	}
 	
 	if(token_matches_chars(cur_tok,"while")){
-		token_offset+=m_compile_parse_while_loop(f,tokens,num_tokens,token_offset,ci);
+		token_offset+=m_compile_parse_while_loop(f,tokens,num_tokens,token_offset);
 	}else if(token_matches_chars(cur_tok,"if")){
-		token_offset+=m_compile_parse_if_statement(f,tokens,num_tokens,token_offset,ci);
+		token_offset+=m_compile_parse_if_statement(f,tokens,num_tokens,token_offset);
 	}else if(token_matches_chars(cur_tok,"goto")){
 		token_offset++;
 		compiler_token* cur_tok=m_compile_get_next_token(tokens,num_tokens,token_offset);
@@ -2812,7 +2879,7 @@ orcus_int m_compile_read_keyword_block(compiler_function* f, compiler_token* tok
 			return 0;
 		}
 		add_instruction(f,ORCUS_OPCODE_JMPR, token_offset);
-		if(!compiler_info_add_goto_jump(ci,cur_tok,f->number_instructions+ci->additional_instructions)){
+		if(!compiler_add_goto_jump(f,cur_tok,f->number_instructions)){
 			f->errorcode=ORCUS_COMPERR_MEMORY_ALLOCATION;
 			f->token_error_num=token_offset;
 			return 0;
@@ -2830,29 +2897,16 @@ orcus_int m_compile_read_keyword_block(compiler_function* f, compiler_token* tok
 
 
 
-compiler_function* orcus_compile_tokens_to_bytecode(compiler_token* tokens,orcus_int num_tokens,orcus_int token_offset, orcus_int* tokens_used, compiler_info* ci, compiler_function* in){
-	compiler_function* out;
-	if (in) {
-		out = in;
-	}
-	else {
-		out = new_compiler_function();
-	}
-	if(!out)return nullptr;
+orcus_int orcus_compile_tokens_to_bytecode(compiler_token* tokens,orcus_int num_tokens,orcus_int token_offset, compiler_function* out){
 	orcus_int initial_offset=token_offset;
-	bool ci_was_defined=false;
-	if(!ci){
-		ci_was_defined=true;
-		ci=new_compiler_info();
-	}
 	
 	while(true){
-		orcus_int o1=m_compile_read_statment(out,tokens,num_tokens,token_offset,ci);
+		orcus_int o1=m_compile_read_statment(out,tokens,num_tokens,token_offset);
 		if(out->errorcode){
 			break;
 		}
 		token_offset+=o1;
-		orcus_int o2=m_compile_read_keyword_block(out,tokens,num_tokens,token_offset,ci);
+		orcus_int o2=m_compile_read_keyword_block(out,tokens,num_tokens,token_offset);
 		if(out->errorcode){
 			break;
 		}
@@ -2861,13 +2915,18 @@ compiler_function* orcus_compile_tokens_to_bytecode(compiler_token* tokens,orcus
 		orcus_int o3=0;
 		compiler_token* cur_tok = m_compile_get_next_token(tokens,num_tokens,token_offset);
 		if(cur_tok && cur_tok->token_flags & TOKEN_LOOP_MODIFIER){
-			if(ci->in_loop){
+			if(out->in_loop){
 				if(token_matches_chars(cur_tok,"continue")){
 					add_instruction(out, ORCUS_OPCODE_JMPR, token_offset);
-					add_rawdata_bitwidth_size(out, ci->loop_jumppoint_start-(ci->additional_instructions+out->number_instructions)  ,token_offset);
+					if (!compiler_add_loop_startjump(out, out->number_instructions)) {
+						out->errorcode = ORCUS_COMPERR_MEMORY_ALLOCATION;
+						out->token_error_num = token_offset;
+						break;
+					}
+					add_rawdata_bitwidth_size(out, 0, token_offset);
 				}else{ //break
 					add_instruction(out, ORCUS_OPCODE_JMPR, token_offset);
-					if(!compiler_info_add_loop_endjump(ci,out->number_instructions+ci->additional_instructions)){
+					if(!compiler_add_loop_endjump(out,out->number_instructions)){
 						out->errorcode=ORCUS_COMPERR_MEMORY_ALLOCATION;
 						out->token_error_num=token_offset;
 						break;
@@ -2886,64 +2945,10 @@ compiler_function* orcus_compile_tokens_to_bytecode(compiler_token* tokens,orcus
 		if(!o1 && !o2 && !o3){ //exit if no code was generated
 			break;
 		}
-		
-		
+
 	}
 	
-	if(tokens_used)*tokens_used=token_offset-initial_offset;
-	if(ci_was_defined){
-		for(orcus_int i=0;i<ci->num_gotos;i++){
-			if(ci->goto_defined[i]){
-				for(orcus_int n=0;n<ci->goto_pos_count[i];n++){
-					orcus_int p = ci->goto_positions[i][n];
-					orcus_int* j = (orcus_int*)(out->instructions + p);
-					*j=ci->goto_labelpos[i]-p;
-				}
-			}
-		}
-		
-		orcus_int spaceneeded = 0; //track space needed so we can preallocate it in a big block
-		for (orcus_int i = 0; i < ci->num_constants; i++) {
-			orcus_string s = ci->constants[i];
-			spaceneeded += (s.size + sizeof(orcus_opcode) - 1) / sizeof(orcus_opcode);
-			spaceneeded += 2;
-			spaceneeded += ORCUS_INSTRUCTIONS_PER_VARIABLE_SIZE*2;
-		}
-		void* nptr=realloc(out->instructions, sizeof(orcus_opcode) * (spaceneeded + out->number_instructions));
-		if (!nptr) {
-			out->errorcode = ORCUS_COMPERR_MEMORY_ALLOCATION;
-			return out;
-		}
-		out->instructions = (orcus_opcode*)nptr;
-		memmove(out->instructions + spaceneeded, out->instructions, out->number_instructions * sizeof(orcus_opcode));
-		
-		nptr = realloc(out->instruction_tokens, sizeof(orcus_int) * (spaceneeded + out->number_instructions));
-		if (!nptr) {
-			out->errorcode = ORCUS_COMPERR_MEMORY_ALLOCATION;
-			return out;
-		}
-		out->instruction_tokens = (orcus_int*)nptr;
-		memmove(out->instruction_tokens + spaceneeded, out->instruction_tokens, out->number_instructions * sizeof(orcus_int));
-		memset(out->instruction_tokens,0,sizeof(orcus_int)*spaceneeded); //zero the tokens at the constant string assignment
-		orcus_int offset = 0;
-		for (orcus_int i = 0; i < ci->num_constants; i++) {
-			orcus_string s = ci->constants[i];
-			out->instructions[offset] = ORCUS_OPCODE_NSTR;
-			offset++;
-			*((orcus_int*)(out->instructions + offset)) = s.size;
-			offset += ORCUS_INSTRUCTIONS_PER_VARIABLE_SIZE;
-			memcpy(out->instructions + offset, s.ptr, s.size);
-			offset += (s.size + sizeof(orcus_opcode) - 1) / sizeof(orcus_opcode);
-			out->instructions[offset] = ORCUS_OPCODE_SCON;
-			offset++;
-			*((orcus_int*)(out->instructions + offset)) = i;
-			offset += ORCUS_INSTRUCTIONS_PER_VARIABLE_SIZE;
-		}
-		out->number_instructions += spaceneeded;
-		
-		delete_compiler_info(ci);
-	}
-	return out;
+	return token_offset - initial_offset;
 }
 
 
@@ -2955,7 +2960,9 @@ void orcus_compile_mstring(orcus_string* str, orcus_variable* out, bool remove_d
 	compiler_token* tokens = orcus_compile_tokenize_mstring(str,&num_tokens);
 	compiler_function func;
 	memset(&func, 0, sizeof(func));
-	orcus_compile_tokens_to_bytecode(tokens, num_tokens, 0, nullptr, nullptr, &func);
+	func.master = &func;
+	orcus_compile_tokens_to_bytecode(tokens, num_tokens, 0, &func);
+	compiler_function_finalize_addendums(&func);
 
 	if (func.errorcode) {
 		int req_chars;
