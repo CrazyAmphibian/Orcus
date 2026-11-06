@@ -525,12 +525,111 @@ orcus_state* orcus_newstate(const orcus_state* const parent) {
 }
 
 
+inline const char* m_get_opcode_str(orcus_opcode instruction) {
+
+	if (instruction > ORCUS_OPCODE_MSET) {
+		return "????";
+	}
+	static const char* lookup[0xFFFF] = {
+		" NOP", //0
+
+		" ADD", //1
+		" SUB", //2
+		" MUL", //3
+		" DIV", //4
+		" POW", //5
+		"IDIV", //6
+		" MOD", //7
+
+		"BAND", //8
+		"BOR ", //9
+		"BXOR", //10
+		"BNOT", //11
+		"BSHL", //12
+		"BSHR", //13
+
+		"LAND", //14
+		"LOR ", //15
+		"LXOR", //16
+		"LNOT", //17
+
+		"EQL ", //18
+		"NEQ ", //19
+		"GRT ", //20
+		"LET ", //21
+		"GTE ", //22
+		"LTE ", //23
+
+		"SENV", //24
+		"GENV", //25
+		"SET ", //26
+		"GET ", //27
+		"SREG", //28
+		"GREG", //29
+
+		"NINT", //30
+		"NFLO", //31
+		"NTRU", //32
+		"NFAL", //33
+		"NNIL", //34
+		"NSTR", //35
+		"NFUN", //36
+		"NTAB", //37
+		"NARR", //38
+
+		"JMP ", //39
+		"JMPR", //40
+		"JIF ", //41
+		"JNIF", //42
+		"JRIF", //43
+		"JRNI", //44
+
+		"CALL", //45
+		"EXIT", //46
+		"LEN ", //47
+		"CNCT", //48
+		"CLS ", //49
+		"GETL", //50
+		"SETL", //51
+		"GETG", //52
+		"SETG", //53
+
+		"CPYT", //54
+		"SWPT", //55
+		"CPYX", //56
+
+		"UNM ", //57
+		"INC ", //58
+		"DEC ", //59
+
+		"SCON", //60
+		"GCON", //61
+
+		"SWXY", //62
+
+		"NNSE", //63
+
+		"SETL_KCS", //64
+		"GETL_KCS", //65
+		"SETG_KCS", //66
+		"GETG_KCS", //67
+		"SENV_KCS", //68
+		"GENV_KCS", //69
+		"SET_KCS", //70
+		"GET_KCS", //71
+
+		"MSET", //72
+	};
+	return lookup[instruction];
+}
+
 bool orcus_stepstate(orcus_state* const ORCUS_CPP_restrict M) {
 	if (M->programcounter >= M->bytecode->numberofinstructions) return false;
 
 	orcus_opcode opcode = M->bytecode->instructions[M->programcounter];
 
 	//printf("%i - %i %i\n", M->programcounter,iflags,opcode);
+	//printf("%i/0x%x\t%s\n",M->programcounter, M->programcounter,m_get_opcode_str(opcode));
 	M->programcounter++;
 	orcus_bytecode_list[opcode](M);
 
@@ -1437,103 +1536,6 @@ void orcus_clear_function(orcus_function* in) {
 	memset(in, 0, sizeof(orcus_function));
 }
 
-inline const char* m_get_opcode_str(orcus_opcode instruction) {
-
-	if (instruction > ORCUS_OPCODE_MSET) {
-		return "????";
-	}
-	static const char* lookup[0xFFFF] = {
-		" NOP", //0
-
-		" ADD", //1
-		" SUB", //2
-		" MUL", //3
-		" DIV", //4
-		" POW", //5
-		"IDIV", //6
-		" MOD", //7
-
-		"BAND", //8
-		"BOR ", //9
-		"BXOR", //10
-		"BNOT", //11
-		"BSHL", //12
-		"BSHR", //13
-
-		"LAND", //14
-		"LOR ", //15
-		"LXOR", //16
-		"LNOT", //17
-
-		"EQL ", //18
-		"NEQ ", //19
-		"GRT ", //20
-		"LET ", //21
-		"GTE ", //22
-		"LTE ", //23
-
-		"SENV", //24
-		"GENV", //25
-		"SET ", //26
-		"GET ", //27
-		"SREG", //28
-		"GREG", //29
-
-		"NINT", //30
-		"NFLO", //31
-		"NTRU", //32
-		"NFAL", //33
-		"NNIL", //34
-		"NSTR", //35
-		"NFUN", //36
-		"NTAB", //37
-		"NARR", //38
-
-		"JMP ", //39
-		"JMPR", //40
-		"JIF ", //41
-		"JNIF", //42
-		"JRIF", //43
-		"JRNI", //44
-
-		"CALL", //45
-		"EXIT", //46
-		"LEN ", //47
-		"CNCT", //48
-		"CLS ", //49
-		"GETL", //50
-		"SETL", //51
-		"GETG", //52
-		"SETG", //53
-
-		"CPYT", //54
-		"SWPT", //55
-		"CPYX", //56
-
-		"UNM ", //57
-		"INC ", //58
-		"DEC ", //59
-
-		"SCON", //60
-		"GCON", //61
-
-		"SWXY", //62
-
-		"NNSE", //63
-
-		"SETL_KCS", //64
-		"GETL_KCS", //65
-		"SETG_KCS", //66
-		"GETG_KCS", //67
-		"SENV_KCS", //68
-		"GENV_KCS", //69
-		"SET_KCS", //70
-		"GET_KCS", //71
-
-		"MSET", //72
-	};
-	return lookup[instruction];
-}
 
 orcus_string* orcus_get_bytecode_debug(orcus_function* F) {
 	orcus_string* out= (orcus_string*)malloc(sizeof(orcus_string));
