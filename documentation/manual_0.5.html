@@ -126,5 +126,37 @@
 	</p>
 </div>
 
+
+<div>
+	<h3>ternary statement</h3>
+	<p>
+		ternary statements offer a compact and performant way to use conditional variables.<br>
+		syntax is simple, and uses standard conditional logic checks
+	</p>
+	
+	<p class="codeblock">
+		var = condition ? value_true : value_false
+	</p>
+	
+	<p>
+		each statement is only evaluated when needed, offering both better performance and error prevention compared to other methods. for example, if option is nil, the following code safely gives an alternative value, since the expression to index it is never performed.
+	</p>
+	
+	<p class="codeblock">
+		result = option ? option.value : fallback_value
+	</p>
+	<p>
+		statements can be nested any number of times, though using parenthesis is heavily recommended when doing so, for clarity
+	</p>
+	<p class="codeblock">
+		a=1<br>
+		b=0<br>
+		result = a ? b ? 3 : 2 : 1 //result is 2<br>
+		result = a ? (b ? 3 : 2) : 1 //same code as above<br>
+		
+	</p>
+	
+</div>
+
 </body>
 </html>
