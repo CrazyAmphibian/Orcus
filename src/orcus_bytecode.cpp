@@ -1109,51 +1109,67 @@ void ORCUS_BYTECODE_JMPR(orcus_state* const ORCUS_CPP_restrict M) { //JuMP Relat
 }
 
 void ORCUS_BYTECODE_JIF(orcus_state* const ORCUS_CPP_restrict M) { //Jump IF
-	orcus_variable ck;
-	orcus_popstack(M,&ck);
-	if(orcus_checkbool(&ck)){
+	if (!M->sizeofstack) {
+		orcus_raise_error(M, ORCUS_ERROR_STACK_CORRUPT);
+		return;
+	}
+	orcus_variable* ck = M->stack+M->sizeofstack-1;
+	if(orcus_checkbool(ck)){
 		M->programcounter = *(orcus_uint*)(M->bytecode->instructions + M->programcounter);
 	}
 	else {
 		M->programcounter += ORCUS_INSTRUCTIONS_PER_VARIABLE_SIZE;
 	}
-	orcus_release_var(&ck);
+	M->sizeofstack--;
+	orcus_release_var(ck);
 }
 
 void ORCUS_BYTECODE_JNIF(orcus_state* const ORCUS_CPP_restrict M) { //Jump Not IF
-	orcus_variable ck;
-	orcus_popstack(M, &ck);
-	if (!orcus_checkbool(&ck)) {
+	if (!M->sizeofstack) {
+		orcus_raise_error(M, ORCUS_ERROR_STACK_CORRUPT);
+		return;
+	}
+	orcus_variable* ck = M->stack + M->sizeofstack - 1;
+	if (!orcus_checkbool(ck)) {
 		M->programcounter = *(orcus_uint*)(M->bytecode->instructions + M->programcounter);
 	}
 	else {
 		M->programcounter += ORCUS_INSTRUCTIONS_PER_VARIABLE_SIZE;
 	}
-	orcus_release_var(&ck);
+	M->sizeofstack--;
+	orcus_release_var(ck);
 }
 
 void ORCUS_BYTECODE_JRIF(orcus_state* const ORCUS_CPP_restrict M) { //Jump Relative IF
-	orcus_variable ck;
-	orcus_popstack(M, &ck);
-	if (orcus_checkbool(&ck)) {
+	if (!M->sizeofstack) {
+		orcus_raise_error(M, ORCUS_ERROR_STACK_CORRUPT);
+		return;
+	}
+	orcus_variable* ck = M->stack + M->sizeofstack - 1;
+	if (orcus_checkbool(ck)) {
 		M->programcounter += *(orcus_int*)(M->bytecode->instructions + M->programcounter);
 	}
 	else {
 		M->programcounter += ORCUS_INSTRUCTIONS_PER_VARIABLE_SIZE;
 	}
-	orcus_release_var(&ck);
+	M->sizeofstack--;
+	orcus_release_var(ck);
 }
 
 void ORCUS_BYTECODE_JRNI(orcus_state* const ORCUS_CPP_restrict M) { //Jump Relative Not If
-	orcus_variable ck;
-	orcus_popstack(M, &ck);
-	if (!orcus_checkbool(&ck)) {
+	if (!M->sizeofstack) {
+		orcus_raise_error(M, ORCUS_ERROR_STACK_CORRUPT);
+		return;
+	}
+	orcus_variable* ck = M->stack + M->sizeofstack - 1;
+	if (!orcus_checkbool(ck)) {
 		M->programcounter += *(orcus_int*)(M->bytecode->instructions + M->programcounter);
 	}
 	else {
 		M->programcounter += ORCUS_INSTRUCTIONS_PER_VARIABLE_SIZE;
 	}
-	orcus_release_var(&ck);
+	M->sizeofstack--;
+	orcus_release_var(ck);
 }
 
 void ORCUS_BYTECODE_CALL(orcus_state* const ORCUS_CPP_restrict M) { //CALL function
