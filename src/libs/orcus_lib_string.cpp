@@ -252,23 +252,48 @@ void orcus_lib_string_replace(orcus_state* const ORCUS_CPP_restrict M, const orc
 	orcus_string* replace = (orcus_string*)replace_var.data.p;
 
 	orcus_int replacments = 0;
+	orcus_int substr_start = 0;
 
-	for (orcus_int c = 0; c < str->size;) {
-		if (max_replacments.type&& replacments>=max_replacments.data.i)goto next;
-		if (c >= str->size - search->size)goto next;
+	bool exitloop = str->size == 0;
+	for (orcus_int c = 0; c <= str->size;) {
+		if (exitloop)break;
 		for (orcus_int i = 0; i < search->size; i++) {
-			if (str->ptr[c + i] != search->ptr[i]) {
-				goto next;
+			if (c + i >= str->size) {
+				if (!orcus_mstring_addchars(outstr, str->ptr + substr_start, c - substr_start)) {
+					orcus_mstring_delete(outstr);
+					orcus_raise_error(M, ORCUS_ERROR_ALLOCATION);
+					return;
+				}
+				exitloop = true;
+				goto nomatch;
+			}
+			else if (str->ptr[c + i] != search->ptr[i]) {
+				goto nomatch;
 			}
 		}
-		//string found
-		replacments++;
-		orcus_mstrings_append(outstr, replace);
-		c += search->size;
+		//matched
+		if (!search->size) {
+			exitloop = true;
+			c = str->size;
+		}
+	match:
+		{
+			if (!orcus_mstring_addchars(outstr, str->ptr + substr_start, c - substr_start)) {
+				orcus_mstring_delete(outstr);
+				orcus_raise_error(M, ORCUS_ERROR_ALLOCATION);
+				return;
+			}
+			if (!orcus_mstrings_append(outstr,replace)) {
+				orcus_mstring_delete(outstr);
+				orcus_raise_error(M, ORCUS_ERROR_ALLOCATION);
+				return;
+			}
+			replacments++;
+			c += search->size;
+			substr_start = c;
+		}
 		continue;
-		next:
-		//string not found.
-		orcus_mstring_addchars(outstr, str->ptr+c,1);
+	nomatch:
 		c++;
 	}
 
