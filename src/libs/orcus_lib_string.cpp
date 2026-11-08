@@ -324,7 +324,8 @@ void orcus_lib_string_count(orcus_state* const ORCUS_CPP_restrict M, const orcus
 	orcus_int replacments = 0;
 
 	for (orcus_int c = 0; c < str->size;) {
-		if (c >= str->size - search->size)goto next;
+		if (!search->size)break;
+		if (c > str->size - search->size)goto next;
 		for (orcus_int i = 0; i < search->size; i++) {
 			if (str->ptr[c + i] != search->ptr[i]) {
 				goto next;
@@ -332,6 +333,7 @@ void orcus_lib_string_count(orcus_state* const ORCUS_CPP_restrict M, const orcus
 		}
 		//string found
 		replacments++;
+		c += search->size;
 		continue;
 	next:
 		c++;
