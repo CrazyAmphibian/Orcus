@@ -258,8 +258,8 @@ void orcus_lib_string_replace(orcus_state* const ORCUS_CPP_restrict M, const orc
 	for (orcus_int c = 0; c <= str->size;) {
 		if (exitloop)break;
 		for (orcus_int i = 0; i < search->size; i++) {
-			if (c + i >= str->size) {
-				if (!orcus_mstring_addchars(outstr, str->ptr + substr_start, c - substr_start)) {
+			if ((c + i >= str->size) || (max_replacments.type && (replacments>=max_replacments.data.i)) ) {
+				if (!orcus_mstring_addchars(outstr, str->ptr + substr_start, str->size - substr_start)) {
 					orcus_mstring_delete(outstr);
 					orcus_raise_error(M, ORCUS_ERROR_ALLOCATION);
 					return;
