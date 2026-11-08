@@ -123,6 +123,7 @@ orcus_string* orcus_mstrings_concat(const orcus_string* const str1, const orcus_
 
 //like concat, but does not return a new string. adds appstr to the end of basestr.
 bool orcus_mstrings_append(orcus_string* const basestr, const orcus_string* const appstr) {
+	if (!appstr->size)return true;
 	if (basestr->constant) {
 		char* nptr = (char*)malloc( sizeof(char) * (basestr->size + appstr->size));
 		if (!nptr)return false;
