@@ -477,44 +477,46 @@ void orcus_lib_string_separate(orcus_state* const ORCUS_CPP_restrict M, const or
 	orcus_string* sep = (orcus_string*)sep_var.data.p;
 
 	orcus_int arr_elems = 0;
-	orcus_int last_find = 0;
+	orcus_int substr_start = 0;
 
-	for (orcus_int c = 0; c < str->size;) {
-		if (c >= str->size - sep->size)goto next;
+	bool exitloop = str->size==0;
+	for (orcus_int c = 0; c <= str->size;) {
+		if (exitloop)break;
 		for (orcus_int i = 0; i < sep->size; i++) {
-			if (str->ptr[c + i] != sep->ptr[i]) {
-				goto next;
+			if (c + i >= str->size) {
+				exitloop = true;
+				goto match;
+			}
+			else if (str->ptr[c + i] != sep->ptr[i]) {
+				goto nomatch;
 			}
 		}
-		//string found
-		{
-			orcus_string* ns = orcus_cstring_to_mstring(str->ptr + last_find, c- last_find);
-			if (!ns)continue;
-			orcus_variable* v=(orcus_variable*)malloc(sizeof(orcus_variable));
-			if (!v)continue;
-			v->type = ORCUS_TYPE_STRING;
-			v->data.p = ns;
-			orcus_setarray(arr, v, arr_elems);
-			arr_elems++;
-			last_find = c+sep->size;
+		//matched
+		if (!sep->size) {
+			exitloop = true;
+			c = str->size;
 		}
-		c += sep->size < 1 ? 1 : sep->size;
+		match:
+		{
+			orcus_string* addstr = orcus_cstring_to_mstring(str->ptr+ substr_start, c - substr_start);
+			if (!addstr) {
+				orcus_destroyarray(arr);
+				orcus_raise_error(M, ORCUS_ERROR_ALLOCATION);
+				return;
+			}
+			orcus_variable v;
+			v.data.p = addstr;
+			v.type = ORCUS_TYPE_STRING;
+			orcus_setarray(arr, &v, arr_elems);
+			arr_elems++;
+			c+= sep->size;
+			substr_start = c;
+		}
 		continue;
-	next:
-		//string not found.
+		nomatch:
 		c++;
 	}
 
-	{
-		orcus_string* ns = orcus_cstring_to_mstring(str->ptr + last_find, str->size - last_find);
-		if (!ns)return;
-		orcus_variable* v = (orcus_variable*)malloc(sizeof(orcus_variable));
-		if (!v)return;
-		v->type = ORCUS_TYPE_STRING;
-		v->data.p = ns;
-		orcus_setarray(arr, v, arr_elems);
-		arr_elems++;
-	}
 
 	orcus_release_var(&sep_var);
 	orcus_release_var(&str_var);
