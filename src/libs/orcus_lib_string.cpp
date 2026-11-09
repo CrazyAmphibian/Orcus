@@ -1078,19 +1078,26 @@ void orcus_lib_string_format(orcus_state* const ORCUS_CPP_restrict M, const orcu
 	ARG2 = 2
 	*/
 
+	orcus_int n_s = 0;
+	orcus_int n_e = 0;
+
 	while (pc<s->size) {
 		char c = s->ptr[pc];
 		if (c == '%') {
 			pc++;
 			if (pc < s->size) {
+				orcus_mstring_addchars(outstr, s->ptr + n_s, pc-n_s-1);
 				pc+=orcus_readformat(s,pc, outstr,var_t,&var_s);
 			}
+			n_s = n_e = pc;
+		
 		}
 		else {
-			orcus_mstring_addchars(outstr, s->ptr+pc, 1);
+			//orcus_mstring_addchars(outstr, s->ptr+pc, 1);
 			pc++;
 		}
 	}
+	orcus_mstring_addchars(outstr, s->ptr + n_e,s->size-n_e);
 
 	for (orcus_int i = 1; i < args_in; i++) {
 		orcus_release_var(var_t + i - 1);
@@ -1426,7 +1433,7 @@ bool orcus_evaluate_patterns(orcus_string* str, ORCUS_PATTERN* patterns, orcus_i
 	*pattern_str_end = 0;
 	if (str_start >= str->size)return false;
 	str_start--;
-	if (!num_patterns)return true;
+	if (!num_patterns)return false;
 
 	orcus_int advanced_from = 0;
 	orcus_int current_pattern = 0;
