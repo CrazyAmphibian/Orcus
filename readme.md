@@ -1,5 +1,5 @@
 # Orcus
-**current version: 6.1**
+**current version: 7.0**
 
 Orcus is an interpreted stack-based programming language focused on being simple, reasonably fast, and putting responsibility in the hands of programmers.
 
