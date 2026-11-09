@@ -415,8 +415,12 @@ void orcus_lib_array_swap(orcus_state* const ORCUS_CPP_restrict M, const orcus_i
 	orcus_getarray(ar, p1,&tv);
 	orcus_variable tv2;
 	orcus_getarray(ar, p2, &tv2);
+	orcus_increment_variable_refrence_count(&tv);
+	orcus_increment_variable_refrence_count(&tv2); //protect freeing
 	orcus_setarray(ar, &tv2, p1);
 	orcus_setarray(ar, &tv,p2);
+	orcus_decrement_variable_refrence_count(&tv);
+	orcus_decrement_variable_refrence_count(&tv2);
 
 	ORCUS_CFUNCTION_ENSURE_CORRECT_NUMBER_OUTPUT_ARGS(M, args_out);
 }
