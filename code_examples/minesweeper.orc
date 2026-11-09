@@ -216,18 +216,18 @@ while true do
 			local status=visible[(x+(y*global size_x))]
 			local hoverover= (cursorx==x) && (cursory==y)
 			if status == VISIBLE_UNKNOWN then
-				OUTPUT_BUF_ARR[#OUTPUT_BUF_ARR]=( decoratetext("?",COLOR_WHITE,hoverover && COLOR_GREEN || COLOR_WHITE) )
+				OUTPUT_BUF_ARR[#OUTPUT_BUF_ARR]=( decoratetext("?",COLOR_WHITE,hoverover ? COLOR_GREEN : COLOR_WHITE) )
 			elseif status == VISIBLE_BOMBREVEALED then
-				OUTPUT_BUF_ARR[#OUTPUT_BUF_ARR]=( decoratetext("*",COLOR_RED,hoverover && COLOR_GREEN || COLOR_RED) )
+				OUTPUT_BUF_ARR[#OUTPUT_BUF_ARR]=( decoratetext("*",COLOR_RED,hoverover ? COLOR_GREEN : COLOR_RED) )
 			elseif status == VISIBLE_FLAG then
-				OUTPUT_BUF_ARR[#OUTPUT_BUF_ARR]=( decoratetext("!",COLOR_RED,hoverover && COLOR_GREEN || COLOR_WHITE) )
+				OUTPUT_BUF_ARR[#OUTPUT_BUF_ARR]=( decoratetext("!",COLOR_RED,hoverover ? COLOR_GREEN : COLOR_WHITE) )
 				flagcount++
 			elseif status == VISIBLE_VISIBLE then
-				OUTPUT_BUF_ARR[#OUTPUT_BUF_ARR]=( decoratetext(" ",COLOR_BLACK,hoverover && COLOR_GREEN || COLOR_BLACK) )
+				OUTPUT_BUF_ARR[#OUTPUT_BUF_ARR]=( decoratetext(" ",COLOR_BLACK,hoverover ? COLOR_GREEN : COLOR_BLACK) )
 				revealedtiles++
 			else
 				
-				OUTPUT_BUF_ARR[#OUTPUT_BUF_ARR]=( decoratetext((status),color_lookups[status],hoverover && COLOR_GREEN || COLOR_BLACK))
+				OUTPUT_BUF_ARR[#OUTPUT_BUF_ARR]=( decoratetext((status),color_lookups[status],hoverover ? COLOR_GREEN : COLOR_BLACK))
 				revealedtiles++
 			end
 			
