@@ -132,6 +132,7 @@ void orcus_lib_string_find(orcus_state* const ORCUS_CPP_restrict M, const orcus_
 	if (strvar.type != ORCUS_TYPE_STRING) {
 		orcus_raise_error_firstargpointeronly(M, ORCUS_ERROR_WRONG_TYPE_VARIABLEPROVIDED, &strvar, ORCUS_TYPE_STRING, 1);
 		orcus_release_var(&strvar);
+		orcus_release_var(&searchforvar);
 		return;
 	}
 
@@ -164,7 +165,7 @@ void orcus_lib_string_find(orcus_state* const ORCUS_CPP_restrict M, const orcus_
 		out.data.i = 0;
 	}
 
-	orcus_pushstack(M, &out);
+	if(args_out)orcus_pushstack(M, &out);
 	
 	//second one is end char.
 	if (args_out > 1) {
@@ -227,6 +228,7 @@ void orcus_lib_string_replace(orcus_state* const ORCUS_CPP_restrict M, const orc
 	if (search_var.type != ORCUS_TYPE_STRING) {
 		orcus_raise_error_firstargpointeronly(M, ORCUS_ERROR_WRONG_TYPE_VARIABLEPROVIDED, &search_var, ORCUS_TYPE_STRING, 2);
 		orcus_release_var(&search_var);
+		orcus_release_var(&replace_var);
 		return;
 	}
 
@@ -235,6 +237,8 @@ void orcus_lib_string_replace(orcus_state* const ORCUS_CPP_restrict M, const orc
 	if (str_var.type != ORCUS_TYPE_STRING) {
 		orcus_raise_error_firstargpointeronly(M, ORCUS_ERROR_WRONG_TYPE_VARIABLEPROVIDED, &str_var, ORCUS_TYPE_STRING, 1);
 		orcus_release_var(&str_var);
+		orcus_release_var(&search_var);
+		orcus_release_var(&replace_var);
 		return;
 	}
 
@@ -244,6 +248,7 @@ void orcus_lib_string_replace(orcus_state* const ORCUS_CPP_restrict M, const orc
 		return;
 	}
 	outstr->size = 0;
+	outstr->constant = false;
 	outstr->references = 0;
 	outstr->ptr = nullptr;
 	
@@ -1724,6 +1729,7 @@ void orcus_lib_string_p_replace(orcus_state* const ORCUS_CPP_restrict M, const o
 	if (matchvar.type != ORCUS_TYPE_STRING) {
 		orcus_raise_error_firstargpointeronly(M, ORCUS_ERROR_WRONG_TYPE_VARIABLEPROVIDED, &matchvar, ORCUS_TYPE_STRING, 2);
 		orcus_release_var(&matchvar);
+		orcus_release_var(&repvar);
 		return;
 	}
 
@@ -1732,6 +1738,8 @@ void orcus_lib_string_p_replace(orcus_state* const ORCUS_CPP_restrict M, const o
 	if (strvar.type != ORCUS_TYPE_STRING) {
 		orcus_raise_error_firstargpointeronly(M, ORCUS_ERROR_WRONG_TYPE_VARIABLEPROVIDED, &strvar, ORCUS_TYPE_STRING, 1);
 		orcus_release_var(&strvar);
+		orcus_release_var(&repvar);
+		orcus_release_var(&matchvar);
 		return;
 	}
 
