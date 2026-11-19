@@ -132,7 +132,7 @@ void orcus_lib_std_iterate(orcus_state* const ORCUS_CPP_restrict M, const orcus_
 
 								orcus_variable o;
 								orcus_pullstack(SubM,&o);
-								if (orcus_checkbool(&o)) { //soft break from all loops
+								if (orcus_checkbool(&o) || SubM->errorcode) { //soft break from all loops
 #ifdef ORCUS_64BIT
 									i1 = i2 = i3 = i4 = i5 = i6 = INT_MAX-1;
 #else
@@ -140,7 +140,6 @@ void orcus_lib_std_iterate(orcus_state* const ORCUS_CPP_restrict M, const orcus_
 #endif
 								}
 								orcus_release_var(&o);
-								if (SubM->errorcode)return;
 								orcus_clearstate(SubM);
 							}
 							else { //M functions get args in the reverse order. confusing, but it works.
@@ -151,7 +150,7 @@ void orcus_lib_std_iterate(orcus_state* const ORCUS_CPP_restrict M, const orcus_
 
 								orcus_variable o;
 								orcus_pullstack(SubM, &o);
-								if (orcus_checkbool(&o)) { //soft break from all loops
+								if (orcus_checkbool(&o) || SubM->errorcode) { //soft break from all loops
 #ifdef ORCUS_64BIT
 									i1 = i2 = i3 = i4 = i5 = i6 = INT_MAX-1;
 #else
@@ -159,7 +158,6 @@ void orcus_lib_std_iterate(orcus_state* const ORCUS_CPP_restrict M, const orcus_
 #endif
 								}
 								orcus_release_var(&o);
-								if (SubM->errorcode)return;
 								orcus_clearstate(SubM);
 							}
 						}
@@ -223,7 +221,10 @@ void orcus_lib_std_iterate(orcus_state* const ORCUS_CPP_restrict M, const orcus_
 					}
 					orcus_release_var(&o);
 				}
-				if (SubM->errorcode)return;
+				if (SubM->errorcode) {
+					t = ORCUS_NUMBER_OF_TYPES;
+					i = subt.size;
+				};
 				orcus_clearstate(SubM);
 			}
 		}
