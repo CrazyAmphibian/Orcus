@@ -896,38 +896,16 @@ void ORCUS_BYTECODE_GET(orcus_state* const ORCUS_CPP_restrict M) {
 
 
 void ORCUS_BYTECODE_SREG(orcus_state* const ORCUS_CPP_restrict M) {
-	const orcus_uint regnum = *(orcus_uint*)(M->bytecode->instructions + M->programcounter);
-
-	M->programcounter += ORCUS_INSTRUCTIONS_PER_VARIABLE_SIZE;
-
-	orcus_variable v;
-	if (regnum <= register_max) {
-		orcus_popstack(M, &v);
-		M->registers[regnum] = v;
-	}
-	else {
-		orcus_discard_top_of_stack(M);
-	}
-
+	orcus_discard_top_of_stack(M);
 }
 
 
 void ORCUS_BYTECODE_GREG(orcus_state* const ORCUS_CPP_restrict M) {
-	const orcus_uint regnum = *(orcus_uint*)(M->bytecode->instructions + M->programcounter);
-
-	M->programcounter += ORCUS_INSTRUCTIONS_PER_VARIABLE_SIZE;
-
-	if (regnum <= register_max) {
-		orcus_pushstack(M, M->registers+regnum);
-	}
-	else {
-		orcus_variable out;
+	orcus_variable out;
 		
-		out.type = ORCUS_TYPE_NIL;
-		out.data.i = 0;
-		orcus_pushstack(M, &out);
-	}
-
+	out.type = ORCUS_TYPE_NIL;
+	out.data.i = 0;
+	orcus_pushstack(M, &out);
 }
 
 void ORCUS_BYTECODE_NINT(orcus_state* const ORCUS_CPP_restrict M) { //New INTeger

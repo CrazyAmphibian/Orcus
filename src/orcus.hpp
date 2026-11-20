@@ -216,7 +216,6 @@ struct orcus_state {
 	orcus_variable* stack = nullptr;
 	orcus_uint allocatedstacksize = 0; // the size of the stack array
 
-	orcus_variable* registers = nullptr;
 	orcus_variable* constants = nullptr;
 	orcus_uint num_constants = 0;
 
@@ -260,8 +259,6 @@ enum ORCUS_TYPE_ENUMS:uint8_t {
 	ORCUS_TYPE_FILE = 9,
 	ORCUS_TYPE_THREAD=10,
 };
-
-extern uint16_t register_max;// = 0xf; //registers rage from 0 to this number
 
 
 struct orcus_libdef {

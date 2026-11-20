@@ -469,19 +469,10 @@ orcus_state* orcus_newstate(const orcus_state* const parent) {
 
 
 	if (!parent) {
-		newstate->registers = (orcus_variable*)malloc(sizeof(orcus_variable) * (1u+register_max));
-		if (newstate->registers == nullptr) {
-			free(newstate);
-			return nullptr;
-		}
-		for (orcus_int i = 0; i <= register_max; i++) {
-			newstate->registers = nullptr;
-		}
 		newstate->masterstate = newstate;
 		newstate->parentstate =  nullptr;
 	}
 	else {
-		newstate->registers = parent->registers;
 		newstate->masterstate = parent->masterstate;
 		newstate->parentstate = (orcus_state*)parent;
 
@@ -651,15 +642,6 @@ void orcus_clearstate(orcus_state* const ORCUS_CPP_restrict M, bool for_deletion
 	}
 	M->sizeofstack = 0;
 	
-	
-	if (M->masterstate == M && M->registers) {
-		for (orcus_uint i = 0; i < register_max; i++) {
-			if (M->registers[i].type) {
-				orcus_release_var(M->registers+i);
-				M->registers[i].type = ORCUS_TYPE_NIL;
-			}
-		}
-	}
 
 	if (M->enviroment) {
 		if (!for_deletion) {
@@ -706,10 +688,6 @@ void orcus_destroystate(orcus_state* const ORCUS_CPP_restrict M) {
 			orcus_clear_function(M->bytecode);
 			free(M->bytecode);
 		}
-	}
-
-	if (M->masterstate == M && M->registers) {
-		free(M->registers);
 	}
 
 	free(M);
