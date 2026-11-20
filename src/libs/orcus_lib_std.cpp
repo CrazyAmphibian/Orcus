@@ -284,15 +284,23 @@ void orcus_lib_std_restricted_call(orcus_state* const ORCUS_CPP_restrict M, cons
 	}
 
 
-	orcus_state* iso_M=orcus_newstate();
+	orcus_state* iso_M = orcus_get_child_state(M);//orcus_newstate();
 	if (!iso_M) {
 		orcus_raise_error(M, ORCUS_ERROR_ALLOCATION);
 		free(argt);
 		return;
 	}
-	orcus_destroytable(iso_M->enviroment);
-	iso_M->enviroment = (orcus_table*)tab.data.p;
+	
+	iso_M->errorcode = 0;
+	//remove variables that link the enviroment
+	orcus_table* oldenv = iso_M->enviroment;
 	orcus_function* oldfunc = iso_M->bytecode;
+	orcus_state* oldmaster = iso_M->masterstate;
+	orcus_state* oldparent = iso_M->parentstate;
+	iso_M->masterstate=iso_M;
+	iso_M->parentstate = nullptr;
+
+	iso_M->enviroment = (orcus_table*)tab.data.p;
 	for (orcus_int i = 0; i < args_in - 2; i++) {
 		orcus_pushstack(iso_M, argt+i);
 	}
@@ -328,8 +336,14 @@ void orcus_lib_std_restricted_call(orcus_state* const ORCUS_CPP_restrict M, cons
 
 
 	free(argt);
-	iso_M->enviroment=nullptr; //clear it before we free so that we don't discard the enviroment table.
-	orcus_destroystate(iso_M);
+
+	//reset variables to original state.
+	iso_M->enviroment=oldenv;
+	iso_M->bytecode = oldfunc;
+	iso_M->masterstate = oldmaster;
+	iso_M->parentstate = oldparent;
+
+	orcus_clearstate(iso_M);
 
 	orcus_release_var(&func);
 	orcus_release_var(&tab);
