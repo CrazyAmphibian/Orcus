@@ -45,7 +45,7 @@ typedef float orcus_float;
 #define ORCUS_32BIT
 #endif
 
-#define ORCUS_VERSION 7
+#define ORCUS_VERSION 8
 #define ORCUS_VERSION_PATCH 0
 
 #define ORCUS

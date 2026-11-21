@@ -867,7 +867,7 @@ void orcus_lib_io_input(orcus_state* const ORCUS_CPP_restrict M, const orcus_int
 	ORCUS_CFUNCTION_ENSURE_CORRECT_NUMBER_OUTPUT_ARGS(M, args_out, 1);
 }
 
-const size_t char_array_blocksize = 16;
+
 enum orcus_serialize_types:unsigned char{
 	SERIALIZED_NIL = '\0',
 	SERIALIZED_INT64,
@@ -899,7 +899,7 @@ enum orcus_serialize_types:unsigned char{
 	SERIALIZED_TABLE_SIZE64,
 };
 
-
+const size_t char_array_blocksize = 16;
 inline bool check_chars_preallocation(unsigned char** chars, orcus_int* num_chars, orcus_int* chars_allocated, orcus_int chars_requested) {
 	orcus_int defecit = *num_chars + chars_requested - *chars_allocated;
 	if (defecit>0) {
@@ -920,7 +920,6 @@ inline bool serial_write_var_of_size(const void* data,const size_t sizeofdata, u
 	for (size_t n = 0; n < sizeofdata; n++) {
 		(*chars)[*num_chars] = (data_value>>(n<<3)) & 0xFF;//n*8
 		(*num_chars)++;
-		//data_value >>= 8;
 	}
 	return true;
 }
