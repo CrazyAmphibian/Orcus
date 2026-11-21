@@ -1373,10 +1373,11 @@ inline bool deser_chars_avalible(orcus_int size,orcus_int position,orcus_int req
 inline bool deserial_read_var_of_size(void* out,size_t sizeofdata, const unsigned char* chars, const orcus_int size, orcus_int* position) {
 	if (!deser_chars_avalible(size,*position,(orcus_int)sizeofdata))return false;
 	orcus_uint data=0;
-	for (size_t n = 0; n < sizeofdata; n++) {
-		data |= ((orcus_uint)chars[*position]) << (n << 3); //n*8
-		(*position)++;
+	for (size_t n = sizeofdata; n > 0; n--) {
+		data <<= 8;
+		data |= chars[(*position)+n-1];
 	}
+	(*position) += sizeofdata;
 	memcpy(out, &data, sizeofdata);
 	return true;
 }
