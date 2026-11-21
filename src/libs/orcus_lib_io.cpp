@@ -912,13 +912,35 @@ inline bool check_chars_preallocation(unsigned char** chars, orcus_int* num_char
 	return true;
 }
 
-//writes data, in little endian format. also requires an intptr sized data, even if you're writting a short. but that's ok because the max variable size in orcus is an intptr.
-inline bool serial_write_var_of_size(const void* data,const size_t sizeofdata, unsigned char** chars, orcus_int* num_chars, orcus_int* chars_allocated) {
-	if (!check_chars_preallocation(chars, num_chars, chars_allocated, (orcus_int)sizeofdata))return false;
-	orcus_uint data_value; //want int so we can do bitmath on it.
-	memcpy(&data_value, data, sizeofdata);
-	for (size_t n = 0; n < sizeofdata; n++) {
+//writes data, in little endian format. takes an 8-byte wide value pointer.
+inline bool serial_write_var_64(const void* data, unsigned char** chars, orcus_int* num_chars, orcus_int* chars_allocated) {
+	if (!check_chars_preallocation(chars, num_chars, chars_allocated, sizeof(uint64_t)))return false;
+	uint64_t data_value; //want int so we can do bitmath on it.
+	memcpy(&data_value, data, sizeof(uint64_t));
+	for (size_t n = 0; n < sizeof(uint64_t); n++) {
 		(*chars)[*num_chars] = (data_value>>(n<<3)) & 0xFF;//n*8
+		(*num_chars)++;
+	}
+	return true;
+}
+//takes an 4-byte wide value pointer.
+inline bool serial_write_var_32(const void* data, unsigned char** chars, orcus_int* num_chars, orcus_int* chars_allocated) {
+	if (!check_chars_preallocation(chars, num_chars, chars_allocated, sizeof(uint32_t)))return false;
+	uint32_t data_value; //want int so we can do bitmath on it.
+	memcpy(&data_value, data, sizeof(uint32_t));
+	for (size_t n = 0; n < sizeof(uint32_t); n++) {
+		(*chars)[*num_chars] = (data_value >> (n << 3)) & 0xFF;//n*8
+		(*num_chars)++;
+	}
+	return true;
+}
+//takes an 2-byte wide value pointer.
+inline bool serial_write_var_16(const void* data, unsigned char** chars, orcus_int* num_chars, orcus_int* chars_allocated) {
+	if (!check_chars_preallocation(chars, num_chars, chars_allocated, sizeof(uint16_t)))return false;
+	uint16_t data_value; //want int so we can do bitmath on it.
+	memcpy(&data_value, data, sizeof(uint16_t));
+	for (size_t n = 0; n < sizeof(uint16_t); n++) {
+		(*chars)[*num_chars] = (data_value >> (n << 3)) & 0xFF;//n*8
 		(*num_chars)++;
 	}
 	return true;
@@ -1047,31 +1069,35 @@ bool orcus_serialize_variable(const orcus_variable* var, unsigned char** chars,o
 				if (!check_chars_preallocation(chars, num_chars, chars_allocated, 3))return false;
 				(*chars)[*num_chars] = SERIALIZED_INT16;
 				(*num_chars)++;
-				return serial_write_var_of_size(&(var->data.u), sizeof(short), chars, num_chars, chars_allocated);
+				short data = var->data.i;
+				return serial_write_var_16(&data, chars, num_chars, chars_allocated);
 			}
 			else if (var->data.i <= USHRT_MAX && var->data.i >= 0) {
 				if (!check_chars_preallocation(chars, num_chars, chars_allocated, 3))return false;
 				(*chars)[*num_chars] = SERIALIZED_INT16UNSIGNED;
 				(*num_chars)++;
-				return serial_write_var_of_size(&(var->data.u), sizeof(short), chars, num_chars, chars_allocated);
+				unsigned short data = var->data.u;
+				return serial_write_var_16(&data, chars, num_chars, chars_allocated);
 			}
 			else if (var->data.i<= INT_MAX && var->data.i >= INT_MIN) {
 				if (!check_chars_preallocation(chars, num_chars, chars_allocated, 5))return false;
 				(*chars)[*num_chars] = SERIALIZED_INT32;
 				(*num_chars)++;
-				return serial_write_var_of_size(&(var->data.u), sizeof(int), chars, num_chars, chars_allocated);
+				int data = var->data.i;
+				return serial_write_var_32(&data, chars, num_chars, chars_allocated);
 			}
 			else if (var->data.i <= UINT_MAX && var->data.i >= 0) {
 				if (!check_chars_preallocation(chars, num_chars, chars_allocated, 5))return false;
 				(*chars)[*num_chars] = SERIALIZED_INT32UNSIGNED;
 				(*num_chars)++;
-				return serial_write_var_of_size(&(var->data.u), sizeof(int), chars, num_chars, chars_allocated);
+				unsigned int data = var->data.u;
+				return serial_write_var_32(&data, chars, num_chars, chars_allocated);
 			}
 			else {
 				if (!check_chars_preallocation(chars, num_chars, chars_allocated, 9))return false;
 				(*chars)[*num_chars] = SERIALIZED_INT64;
 				(*num_chars)++;
-				return serial_write_var_of_size(&(var->data.u), sizeof(int64_t), chars, num_chars, chars_allocated);
+				return serial_write_var_64(&(var->data.u), chars, num_chars, chars_allocated);
 			}
 			return false;
 		case ORCUS_TYPE_FLOAT:
@@ -1079,12 +1105,12 @@ bool orcus_serialize_variable(const orcus_variable* var, unsigned char** chars,o
 			if (!check_chars_preallocation(chars, num_chars, chars_allocated, 9))return false;
 			(*chars)[*num_chars] = SERIALIZED_FLOAT64;
 			(*num_chars)++;
-			return serial_write_var_of_size(&(var->data.u), sizeof(double), chars, num_chars, chars_allocated);
+			return serial_write_var_64(&(var->data.f), chars, num_chars, chars_allocated);
 #else
 			if (!check_chars_preallocation(chars, num_chars, chars_allocated, 5))return false;
 			(*chars)[*num_chars] = SERIALIZED_FLOAT32;
 			(*num_chars)++;
-			return serial_write_var_of_size(&(var->data.u), sizeof(float), chars, num_chars, chars_allocated);
+			return serial_write_var_32(&(var->data.f), chars, num_chars, chars_allocated);
 #endif
 			return false;
 		case ORCUS_TYPE_BOOL:
@@ -1123,7 +1149,8 @@ bool orcus_serialize_variable(const orcus_variable* var, unsigned char** chars,o
 				if (!check_chars_preallocation(chars, num_chars, chars_allocated, str->size + 3))return false;
 				(*chars)[*num_chars] = SERIALIZED_STRING_SIZE16;
 				(*num_chars)++;
-				serial_write_var_of_size((orcus_uint*)&str->size, sizeof(short), chars, num_chars, chars_allocated);
+				unsigned short data = str->size;
+				serial_write_var_16(&data, chars, num_chars, chars_allocated);
 				memcpy(*chars + *num_chars, str->ptr, str->size);
 				(*num_chars) += str->size;
 				return true;
@@ -1132,7 +1159,8 @@ bool orcus_serialize_variable(const orcus_variable* var, unsigned char** chars,o
 				if (!check_chars_preallocation(chars, num_chars, chars_allocated, str->size + 5))return false;
 				(*chars)[*num_chars] = SERIALIZED_STRING_SIZE32;
 				(*num_chars)++;
-				serial_write_var_of_size((orcus_uint*)&str->size, sizeof(int), chars, num_chars, chars_allocated);
+				unsigned int data = str->size;
+				serial_write_var_32(&data, chars, num_chars, chars_allocated);
 				memcpy(*chars + *num_chars, str->ptr, str->size);
 				(*num_chars) += str->size;
 				return true;
@@ -1141,7 +1169,7 @@ bool orcus_serialize_variable(const orcus_variable* var, unsigned char** chars,o
 				if (!check_chars_preallocation(chars, num_chars, chars_allocated, str->size + 9))return false;
 				(*chars)[*num_chars] = SERIALIZED_STRING_SIZE64;
 				(*num_chars)++;
-				serial_write_var_of_size((orcus_uint*)&str->size, sizeof(int64_t), chars, num_chars, chars_allocated);
+				serial_write_var_64(&str->size, chars, num_chars, chars_allocated);
 				memcpy(*chars + *num_chars, str->ptr, str->size);
 				(*num_chars) += str->size;
 				return true;
@@ -1169,17 +1197,19 @@ bool orcus_serialize_variable(const orcus_variable* var, unsigned char** chars,o
 			else if (num_elements < USHRT_MAX) {
 				(*chars)[*num_chars] = SERIALIZED_ARRAY_SIZE16;
 				(*num_chars)++;
-				if (!serial_write_var_of_size(&num_elements, sizeof(short), chars, num_chars, chars_allocated))return false;
+				unsigned short data = num_elements;
+				if (!serial_write_var_16(&data, chars, num_chars, chars_allocated))return false;
 			}
 			else if (num_elements < UINT_MAX) {
 				(*chars)[*num_chars] = SERIALIZED_ARRAY_SIZE32;
 				(*num_chars)++;
-				if (!serial_write_var_of_size(&num_elements, sizeof(int), chars, num_chars, chars_allocated))return false;
+				unsigned int data = num_elements;
+				if (!serial_write_var_32(&data, chars, num_chars, chars_allocated))return false;
 			}
 			else {
 				(*chars)[*num_chars] = SERIALIZED_ARRAY_SIZE64;
 				(*num_chars)++;
-				if (!serial_write_var_of_size(&num_elements, sizeof(uint64_t), chars, num_chars, chars_allocated))return false;
+				if (!serial_write_var_64(&num_elements, chars, num_chars, chars_allocated))return false;
 			}
 		
 			
@@ -1267,17 +1297,19 @@ bool orcus_serialize_variable(const orcus_variable* var, unsigned char** chars,o
 				else if (num_elements < USHRT_MAX) {
 					(*chars)[*num_chars] = SERIALIZED_TABLE_SIZE16;
 					(*num_chars)++;
-					if (!serial_write_var_of_size(&num_elements, sizeof(short), chars, num_chars, chars_allocated))return false;
+					unsigned short data = num_elements;
+					if (!serial_write_var_16(&data, chars, num_chars, chars_allocated))return false;
 				}
 				else if (num_elements < UINT_MAX) {
 					(*chars)[*num_chars] = SERIALIZED_TABLE_SIZE32;
 					(*num_chars)++;
-					if (!serial_write_var_of_size(&num_elements, sizeof(int), chars, num_chars, chars_allocated))return false;
+					unsigned int data = num_elements;
+					if (!serial_write_var_32(&data, chars, num_chars, chars_allocated))return false;
 				}
 				else {
 					(*chars)[*num_chars] = SERIALIZED_TABLE_SIZE64;
 					(*num_chars)++;
-					if (!serial_write_var_of_size(&num_elements, sizeof(uint64_t), chars, num_chars, chars_allocated))return false;
+					if (!serial_write_var_64(&num_elements, chars, num_chars, chars_allocated))return false;
 				}
 
 				for (uint8_t t = 0; t < ORCUS_NUMBER_OF_TYPES; t++) {
@@ -1370,15 +1402,37 @@ inline bool deser_chars_avalible(orcus_int size,orcus_int position,orcus_int req
 }
 
 //reads data, in little endian format. sets the variable's integer data to this.
-inline bool deserial_read_var_of_size(void* out,size_t sizeofdata, const unsigned char* chars, const orcus_int size, orcus_int* position) {
-	if (!deser_chars_avalible(size,*position,(orcus_int)sizeofdata))return false;
-	orcus_uint data=0;
-	for (size_t n = sizeofdata; n > 0; n--) {
+inline bool deserial_read_var_64(void* out, const unsigned char* chars, const orcus_int size, orcus_int* position) {
+	if (!deser_chars_avalible(size,*position,sizeof(uint64_t) ))return false;
+	uint64_t data=0;
+	for (size_t n = sizeof(uint64_t); n > 0; n--) {
 		data <<= 8;
 		data |= chars[(*position)+n-1];
 	}
-	(*position) += sizeofdata;
-	memcpy(out, &data, sizeofdata);
+	(*position) += sizeof(uint64_t);
+	memcpy(out, &data, sizeof(uint64_t));
+	return true;
+}
+inline bool deserial_read_var_32(void* out, const unsigned char* chars, const orcus_int size, orcus_int* position) {
+	if (!deser_chars_avalible(size, *position, sizeof(uint32_t)))return false;
+	uint32_t data = 0;
+	for (size_t n = sizeof(uint32_t); n > 0; n--) {
+		data <<= 8;
+		data |= chars[(*position) + n - 1];
+	}
+	(*position) += sizeof(uint32_t);
+	memcpy(out, &data, sizeof(uint32_t));
+	return true;
+}
+inline bool deserial_read_var_16(void* out, const unsigned char* chars, const orcus_int size, orcus_int* position) {
+	if (!deser_chars_avalible(size, *position, sizeof(uint16_t)))return false;
+	uint16_t data = 0;
+	for (size_t n = sizeof(uint16_t); n > 0; n--) {
+		data <<= 8;
+		data |= chars[(*position) + n - 1];
+	}
+	(*position) += sizeof(uint16_t);
+	memcpy(out, &data, sizeof(uint16_t));
 	return true;
 }
 
@@ -1419,7 +1473,7 @@ bool orcus_deserialize_variable(orcus_variable* out,const unsigned char* chars,c
 			(*position)++;
 			{
 				short data;
-				if (!deserial_read_var_of_size(&data, sizeof(short), chars, size, position))return false;
+				if (!deserial_read_var_16(&data, chars, size, position))return false;
 				out->type = ORCUS_TYPE_INT;
 				out->data.i = data;
 			}
@@ -1428,7 +1482,7 @@ bool orcus_deserialize_variable(orcus_variable* out,const unsigned char* chars,c
 			(*position)++;
 			{
 				unsigned short data;
-				if (!deserial_read_var_of_size(&data, sizeof(short), chars, size, position))return false;
+				if (!deserial_read_var_16(&data, chars, size, position))return false;
 				out->type = ORCUS_TYPE_INT;
 				out->data.u = data;
 			}
@@ -1437,7 +1491,7 @@ bool orcus_deserialize_variable(orcus_variable* out,const unsigned char* chars,c
 			(*position)++;
 			{
 				int data;
-				if (!deserial_read_var_of_size(&data, sizeof(int), chars, size, position))return false;
+				if (!deserial_read_var_32(&data, chars, size, position))return false;
 				out->type = ORCUS_TYPE_INT;
 				out->data.i = data;
 			}
@@ -1446,7 +1500,7 @@ bool orcus_deserialize_variable(orcus_variable* out,const unsigned char* chars,c
 			(*position)++;
 			{
 				unsigned int data;
-				if (!deserial_read_var_of_size(&data, sizeof(int), chars, size, position))return false;
+				if (!deserial_read_var_32(&data, chars, size, position))return false;
 				out->type = ORCUS_TYPE_INT;
 				out->data.u = data;
 			}
@@ -1455,7 +1509,7 @@ bool orcus_deserialize_variable(orcus_variable* out,const unsigned char* chars,c
 			(*position)++;
 			{
 				int64_t data;
-				if (!deserial_read_var_of_size(&data, sizeof(int64_t), chars, size, position))return false;
+				if (!deserial_read_var_64(&data, chars, size, position))return false;
 				out->type = ORCUS_TYPE_INT;
 				out->data.i = data;
 			}
@@ -1464,7 +1518,7 @@ bool orcus_deserialize_variable(orcus_variable* out,const unsigned char* chars,c
 			(*position)++;
 			{
 				float data;
-				if (!deserial_read_var_of_size(&data, sizeof(float), chars, size, position))return false;
+				if (!deserial_read_var_32(&data, chars, size, position))return false;
 				out->type = ORCUS_TYPE_FLOAT;
 				out->data.f = data;
 			}
@@ -1473,7 +1527,7 @@ bool orcus_deserialize_variable(orcus_variable* out,const unsigned char* chars,c
 			(*position)++;
 			{
 				double data;
-				if (!deserial_read_var_of_size(&data, sizeof(double), chars, size, position))return false;
+				if (!deserial_read_var_64(&data, chars, size, position))return false;
 				out->type = ORCUS_TYPE_FLOAT;
 				out->data.f = data;
 			}
@@ -1533,7 +1587,7 @@ bool orcus_deserialize_variable(orcus_variable* out,const unsigned char* chars,c
 			(*position)++;
 
 			unsigned short data;
-			if (!deserial_read_var_of_size(&data, sizeof(short), chars, size, position))return false;
+			if (!deserial_read_var_16(&data, chars, size, position))return false;
 			orcus_int needed_size = data;
 			(*position)+= sizeof(short);
 
@@ -1556,7 +1610,7 @@ bool orcus_deserialize_variable(orcus_variable* out,const unsigned char* chars,c
 			(*position)++;
 
 			unsigned int data;
-			if (!deserial_read_var_of_size(&data, sizeof(int), chars, size, position))return false;
+			if (!deserial_read_var_32(&data, chars, size, position))return false;
 			orcus_int needed_size = data;
 			(*position) += sizeof(int);
 
@@ -1579,7 +1633,7 @@ bool orcus_deserialize_variable(orcus_variable* out,const unsigned char* chars,c
 			(*position)++;
 
 			uint64_t data;
-			if (!deserial_read_var_of_size(&data, sizeof(uint64_t), chars, size, position))return false;
+			if (!deserial_read_var_64(&data, chars, size, position))return false;
 			orcus_int needed_size = data;
 			(*position) += sizeof(uint64_t);
 
@@ -1613,7 +1667,7 @@ bool orcus_deserialize_variable(orcus_variable* out,const unsigned char* chars,c
 			(*position)++;
 			{
 				unsigned short data;
-				if (!deserial_read_var_of_size(&data, sizeof(uint64_t), chars, size, position))return false;
+				if (!deserial_read_var_16(&data, chars, size, position))return false;
 				asize = data;
 			}
 			(*position)+=sizeof(short);
@@ -1622,7 +1676,7 @@ bool orcus_deserialize_variable(orcus_variable* out,const unsigned char* chars,c
 			(*position)++;
 			{
 				unsigned int data;
-				if (!deserial_read_var_of_size(&data, sizeof(uint64_t), chars, size, position))return false;
+				if (!deserial_read_var_32(&data, chars, size, position))return false;
 				asize = data;
 			}
 			(*position) += sizeof(int);
@@ -1630,7 +1684,7 @@ bool orcus_deserialize_variable(orcus_variable* out,const unsigned char* chars,c
 		case SERIALIZED_ARRAY_SIZE64:
 			(*position)++;
 
-			if (!deserial_read_var_of_size(&asize, sizeof(uint64_t), chars, size, position))return false;
+			if (!deserial_read_var_64(&asize, chars, size, position))return false;
 			(*position) += sizeof(uint64_t);
 				array_shared_code:
 				
@@ -1673,7 +1727,7 @@ bool orcus_deserialize_variable(orcus_variable* out,const unsigned char* chars,c
 			(*position)++;
 			{
 				unsigned short data;
-				if (!deserial_read_var_of_size(&data, sizeof(uint64_t), chars, size, position))return false;
+				if (!deserial_read_var_16(&data, chars, size, position))return false;
 				asize = data;
 			}
 			(*position) += sizeof(short);
@@ -1682,14 +1736,14 @@ bool orcus_deserialize_variable(orcus_variable* out,const unsigned char* chars,c
 			(*position)++;
 			{
 				unsigned int data;
-				if (!deserial_read_var_of_size(&data, sizeof(uint64_t), chars, size, position))return false;
+				if (!deserial_read_var_32(&data, chars, size, position))return false;
 				asize = data;
 			}
 			(*position) += sizeof(int);
 			goto table_shared_code;
 		case SERIALIZED_TABLE_SIZE64:
 			(*position)++;
-			if (!deserial_read_var_of_size(&asize, sizeof(uint64_t), chars, size, position))return false;
+			if (!deserial_read_var_64(&asize, chars, size, position))return false;
 			(*position) += sizeof(uint64_t);
 			table_shared_code:
 
