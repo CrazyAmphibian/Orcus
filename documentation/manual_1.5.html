@@ -294,11 +294,25 @@
 <div>
 	<h3 class="function"><span class="type">string</span>|<span class="type">nil</span> serialize ( <span class="type">serializable</span> variable )</h3>
 	
+	
+	<table>
+		<tr><th>type</th><th>space used</th></tr>
+		<tr><td>nil</td><td>1 byte</td></tr>
+		<tr><td>int</td><td>2-9 bytes</td></tr>
+		<tr><td>float</td><td>5-9 bytes</td></tr>
+		<tr><td>bool</td><td>1 byte</td></tr>
+		<tr><td>string</td><td>length + 1-9 bytes (first occurrence), 2-9 bytes (subsequent occurrences)</td></tr>
+		<tr><td>array</td><td>1-9 bytes + stored keys and values (first occurrence), 2-9 bytes (subsequent occurrences)</td></tr>
+		<tr><td>table</td><td>1-9 bytes + stored keys and values (first occurrence), 2-9 bytes (subsequent occurrences)</td></tr>
+	</table>
+	
 	<p>
 		converts a serializable variable into a string that can be read back later with deserialize.<br>
 		this is both faster and more space efficient than trying to recompile variables as code.<br>
 		ignores non-serializable types, and returns nil on faliure.
 	</p>
+	
+
 	
 	<p class="codeblock">
 		io.write(output_file,io.serialize(data)) 
@@ -311,8 +325,14 @@
 	
 	<p>
 		converts a serialized string back into data.<br>
-		returns nil on failiure. 
+		returns nil on failiure.<br>
+		<br>
+		strings longer than 2,147,483,647 characters will not be able to be deserialized on 32 bit systems.<br>
+		arrays and tables with more than 4,294,967,295 elements will not be able to be deserialized on 32 bit systems.<br>
+		64 bit integers will lose data when being deserialized on a 32 bit system, and follow platform-dependent type demotion rules.<br>
 	</p>
+	
+	
 	
 	<p class="codeblock">
 		data=io.deserialize(io.read(output_file))
