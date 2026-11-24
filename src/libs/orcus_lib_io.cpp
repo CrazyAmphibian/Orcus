@@ -897,6 +897,11 @@ enum orcus_serialize_types:unsigned char{
 	SERIALIZED_TABLE_SIZE16,
 	SERIALIZED_TABLE_SIZE32,
 	SERIALIZED_TABLE_SIZE64,
+	SERIALIZED_PREP_FWD_REF, //store a variable for later re-use. the serializer needs to keep proper attention that these are ordered correctly.
+	SERIALIZED_READ_FWD_REF8, //read a stored variable, with a number of uint8
+	SERIALIZED_READ_FWD_REF16,
+	SERIALIZED_READ_FWD_REF32,
+	SERIALIZED_READ_FWD_REF64, //god help you if you're somehow using this
 };
 
 const size_t char_array_blocksize = 16;
@@ -946,13 +951,13 @@ inline bool serial_write_var_16(const void* data, unsigned char** chars, orcus_i
 	return true;
 }
 
-inline bool check_pointer_serial(void* ptr, const orcus_uint* num_pointers_covered, void*** pointers_covered) {
+inline orcus_uint check_pointer_serial(void* ptr, const orcus_uint* num_pointers_covered, void*** pointers_covered) {
 	for (orcus_uint i = 0; i < (*num_pointers_covered); i++) {
 		if ((*pointers_covered)[i] == ptr) {
-			return true;
+			return i+1;
 		}
 	}
-	return false;
+	return 0;
 }
 
 inline bool add_serial_pointer(void* ptr, orcus_uint* num_pointers_covered, void*** pointers_covered) {
@@ -978,6 +983,26 @@ inline bool can_serialize_var(const orcus_variable* var) {
 	case ORCUS_TYPE_ARRAY:
 	case ORCUS_TYPE_TABLE:
 		return true;
+	default:
+		return false;
+	}
+}
+
+inline bool serialize_var_isreferencable(const orcus_variable* var) {
+	switch (var->type) {
+	case ORCUS_TYPE_STRING:
+	case ORCUS_TYPE_ARRAY:
+	case ORCUS_TYPE_TABLE:
+		return true;
+	case ORCUS_TYPE_NIL:
+	case ORCUS_TYPE_INT:
+	case ORCUS_TYPE_FLOAT:
+	case ORCUS_TYPE_BOOL:
+	case ORCUS_TYPE_FILE:
+	case ORCUS_TYPE_THREAD:
+	case ORCUS_TYPE_FUNCTION:
+	case ORCUS_TYPE_CFUNC:
+		return false;
 	default:
 		return false;
 	}
@@ -1121,6 +1146,11 @@ bool orcus_serialize_variable(const orcus_variable* var, unsigned char** chars,o
 		case ORCUS_TYPE_STRING:
 			{
 			orcus_string* str=(orcus_string*)var->data.p;
+
+			if (!add_serial_pointer(str, num_pointers_covered, pointerscovered))return false;
+			(*chars)[*num_chars] = SERIALIZED_PREP_FWD_REF;
+			(*num_chars)++;
+
 			if (!str->size) {
 				if (!check_chars_preallocation(chars, num_chars, chars_allocated, 1))return false;
 				(*chars)[*num_chars] = SERIALIZED_STRING_SIZEEMPTY;
@@ -1181,9 +1211,10 @@ bool orcus_serialize_variable(const orcus_variable* var, unsigned char** chars,o
 			{
 			orcus_array* arr = (orcus_array*)var->data.p;
 			orcus_uint num_elements= array_num_filled_elements(arr);
-			if (!check_chars_preallocation(chars, num_chars, chars_allocated, 1 + sizeof(orcus_int) + num_elements))return false;
+			if (!check_chars_preallocation(chars, num_chars, chars_allocated, 1 + sizeof(orcus_int) + (num_elements*2) ))return false;
 			if (!add_serial_pointer(arr, num_pointers_covered, pointerscovered))return false;
-
+			(*chars)[*num_chars] = SERIALIZED_PREP_FWD_REF;
+			(*num_chars)++;
 			if (!num_elements) {//empty array
 				(*chars)[*num_chars] = SERIALIZED_ARRAY_SIZEEMPTY;
 				(*num_chars)++;
@@ -1249,13 +1280,44 @@ bool orcus_serialize_variable(const orcus_variable* var, unsigned char** chars,o
 								indexvar.type = ORCUS_TYPE_INT;
 								indexvar.data.i = index;
 
-								if (var.type == ORCUS_TYPE_ARRAY || var.type == ORCUS_TYPE_TABLE) {
-									if (check_pointer_serial(var.data.p, num_pointers_covered, pointerscovered))continue;
-								}
-
 								if (!orcus_serialize_variable(&indexvar, chars, num_chars, chars_allocated, pointerscovered, num_pointers_covered))return false;
-								if (!orcus_serialize_variable(&var, chars, num_chars, chars_allocated, pointerscovered, num_pointers_covered))return false;
 
+								if (serialize_var_isreferencable(&var)) {
+									orcus_uint n = (check_pointer_serial(var.data.p, num_pointers_covered, pointerscovered));
+									if (n) {
+										n--;
+										if (n <= UCHAR_MAX) {
+											unsigned char d = n;
+											(*chars)[*num_chars] = SERIALIZED_READ_FWD_REF8;
+											(*num_chars)++;
+											(*chars)[*num_chars] = d;
+											(*num_chars)++;
+										}else if (n <= USHRT_MAX) {
+											unsigned short d = n;
+											(*chars)[*num_chars] = SERIALIZED_READ_FWD_REF16;
+											(*num_chars)++;
+											if (!serial_write_var_16(&d, chars, num_chars, chars_allocated))return false;
+										}else if (n <= UINT_MAX) {
+											unsigned int d = n;
+											(*chars)[*num_chars] = SERIALIZED_READ_FWD_REF32;
+											(*num_chars)++;
+											if (!serial_write_var_32(&d, chars, num_chars, chars_allocated))return false;
+										}
+										else {
+											uint64_t d = n;
+											(*chars)[*num_chars] = SERIALIZED_READ_FWD_REF64;
+											(*num_chars)++;
+											if (!serial_write_var_64(&d, chars, num_chars, chars_allocated))return false;
+										}
+									}
+									else {
+										if (!orcus_serialize_variable(&var, chars, num_chars, chars_allocated, pointerscovered, num_pointers_covered))return false;
+									}
+								}
+								else {
+
+									if (!orcus_serialize_variable(&var, chars, num_chars, chars_allocated, pointerscovered, num_pointers_covered))return false;
+								}
 								
 							}
 
@@ -1281,8 +1343,10 @@ bool orcus_serialize_variable(const orcus_variable* var, unsigned char** chars,o
 				orcus_table* tab = (orcus_table*)var->data.p;
 				orcus_uint num_elements = table_num_filled_elements(tab);
 
-				if (!check_chars_preallocation(chars, num_chars, chars_allocated, 1 + sizeof(orcus_int) + num_elements))return false;
+				if (!check_chars_preallocation(chars, num_chars, chars_allocated, 1 + sizeof(orcus_int) + (num_elements*2)))return false;
 				if (!add_serial_pointer(tab, num_pointers_covered, pointerscovered))return false;
+				(*chars)[*num_chars] = SERIALIZED_PREP_FWD_REF;
+				(*num_chars)++;
 
 				if (!num_elements) {//empty array
 					(*chars)[*num_chars] = SERIALIZED_TABLE_SIZEEMPTY;
@@ -1316,14 +1380,83 @@ bool orcus_serialize_variable(const orcus_variable* var, unsigned char** chars,o
 					orcus_subtable st = tab->data[t];
 					for (orcus_int i = 0; i < st.size; i++) {
 						if (can_serialize_var(st.values+i) && can_serialize_var(st.keys + i) && st.values[i].type) {
-							if(st.keys[i].type==ORCUS_TYPE_ARRAY || st.keys[i].type == ORCUS_TYPE_TABLE){
-								if(check_pointer_serial(st.keys[i].data.p,num_pointers_covered,pointerscovered))continue;
+							if(serialize_var_isreferencable(st.keys+i)){
+								orcus_uint n = (check_pointer_serial(st.keys[i].data.p, num_pointers_covered, pointerscovered));
+								if (n) {
+									n--;
+									if (n <= UCHAR_MAX) {
+										unsigned char d = n;
+										(*chars)[*num_chars] = SERIALIZED_READ_FWD_REF8;
+										(*num_chars)++;
+										(*chars)[*num_chars] = d;
+										(*num_chars)++;
+									}
+									else if (n <= USHRT_MAX) {
+										unsigned short d = n;
+										(*chars)[*num_chars] = SERIALIZED_READ_FWD_REF16;
+										(*num_chars)++;
+										if (!serial_write_var_16(&d, chars, num_chars, chars_allocated))return false;
+									}
+									else if (n <= UINT_MAX) {
+										unsigned int d = n;
+										(*chars)[*num_chars] = SERIALIZED_READ_FWD_REF32;
+										(*num_chars)++;
+										if (!serial_write_var_32(&d, chars, num_chars, chars_allocated))return false;
+									}
+									else {
+										uint64_t d = n;
+										(*chars)[*num_chars] = SERIALIZED_READ_FWD_REF64;
+										(*num_chars)++;
+										if (!serial_write_var_64(&d, chars, num_chars, chars_allocated))return false;
+									}
+								}
+								else {
+									if (!orcus_serialize_variable(st.keys + i, chars, num_chars, chars_allocated, pointerscovered, num_pointers_covered))return false;
+								}
 							}
-							if (st.values[i].type == ORCUS_TYPE_ARRAY || st.values[i].type == ORCUS_TYPE_TABLE) {
-								if (check_pointer_serial(st.values[i].data.p, num_pointers_covered, pointerscovered))continue;
+							else {
+								if (!orcus_serialize_variable(st.keys + i, chars, num_chars, chars_allocated, pointerscovered, num_pointers_covered))return false;
 							}
-							if (!orcus_serialize_variable(st.keys+i, chars, num_chars, chars_allocated, pointerscovered, num_pointers_covered))return false;
-							if (!orcus_serialize_variable(st.values+i, chars, num_chars, chars_allocated, pointerscovered, num_pointers_covered))return false;
+
+							if (serialize_var_isreferencable(st.values + i)) {
+								orcus_uint n = (check_pointer_serial(st.values[i].data.p, num_pointers_covered, pointerscovered));
+								if (n) {
+									n--;
+									if (n <= UCHAR_MAX) {
+										unsigned char d = n;
+										(*chars)[*num_chars] = SERIALIZED_READ_FWD_REF8;
+										(*num_chars)++;
+										(*chars)[*num_chars] = d;
+										(*num_chars)++;
+									}
+									else if (n <= USHRT_MAX) {
+										unsigned short d = n;
+										(*chars)[*num_chars] = SERIALIZED_READ_FWD_REF16;
+										(*num_chars)++;
+										if (!serial_write_var_16(&d, chars, num_chars, chars_allocated))return false;
+									}
+									else if (n <= UINT_MAX) {
+										unsigned int d = n;
+										(*chars)[*num_chars] = SERIALIZED_READ_FWD_REF32;
+										(*num_chars)++;
+										if (!serial_write_var_32(&d, chars, num_chars, chars_allocated))return false;
+									}
+									else {
+										uint64_t d = n;
+										(*chars)[*num_chars] = SERIALIZED_READ_FWD_REF64;
+										(*num_chars)++;
+										if (!serial_write_var_64(&d, chars, num_chars, chars_allocated))return false;
+									}
+								}
+								else {
+									if (!orcus_serialize_variable(st.values + i, chars, num_chars, chars_allocated, pointerscovered, num_pointers_covered))return false;
+								}
+							}
+							else {
+								if (!orcus_serialize_variable(st.values + i, chars, num_chars, chars_allocated, pointerscovered, num_pointers_covered))return false;
+							}
+							
+							
 						}
 
 					}
@@ -1436,7 +1569,7 @@ inline bool deserial_read_var_16(void* out, const unsigned char* chars, const or
 	return true;
 }
 
-bool orcus_deserialize_variable(orcus_variable* out,const unsigned char* chars,const orcus_int size,orcus_int* position) {
+bool orcus_deserialize_variable(orcus_variable* out,const unsigned char* chars,const orcus_int size,orcus_int* position, orcus_variable** storedvars,orcus_uint* num_stored_vars) {
 	if (!deser_chars_avalible(size, *position, 1))return false;
 	unsigned char cur_char = chars[*position];
 	switch (cur_char) {
@@ -1670,7 +1803,6 @@ bool orcus_deserialize_variable(orcus_variable* out,const unsigned char* chars,c
 				if (!deserial_read_var_16(&data, chars, size, position))return false;
 				asize = data;
 			}
-			(*position)+=sizeof(short);
 			goto array_shared_code;
 		case SERIALIZED_ARRAY_SIZE32:
 			(*position)++;
@@ -1679,35 +1811,35 @@ bool orcus_deserialize_variable(orcus_variable* out,const unsigned char* chars,c
 				if (!deserial_read_var_32(&data, chars, size, position))return false;
 				asize = data;
 			}
-			(*position) += sizeof(int);
 			goto array_shared_code;
 		case SERIALIZED_ARRAY_SIZE64:
 			(*position)++;
 
 			if (!deserial_read_var_64(&asize, chars, size, position))return false;
-			(*position) += sizeof(uint64_t);
+
 				array_shared_code:
 				
 				orcus_array* arr=orcus_newarray();
 				if (!arr)return false;
-				
+				out->type = ORCUS_TYPE_ARRAY;
+				out->data.p = arr;
+
 				while (asize) {
 					orcus_variable key;
 					orcus_variable value;
-					if (!orcus_deserialize_variable(&key, chars, size, position))return false;
+					if (!orcus_deserialize_variable(&key, chars, size, position, storedvars, num_stored_vars))return false;
 					if (key.type != ORCUS_TYPE_INT) {
 						orcus_release_var(&key);
 						return false;
 					}
-					if (!orcus_deserialize_variable(&value, chars, size, position))return false;
+					if (!orcus_deserialize_variable(&value, chars, size, position, storedvars, num_stored_vars))return false;
 					if (!orcus_setarray(arr, &value, key.data.i)) {
 						orcus_release_var(&value);
 						return false;
 					}
 					asize--;
 				}
-				out->type = ORCUS_TYPE_ARRAY;
-				out->data.p = arr;
+				
 		}
 			return true;
 
@@ -1730,7 +1862,6 @@ bool orcus_deserialize_variable(orcus_variable* out,const unsigned char* chars,c
 				if (!deserial_read_var_16(&data, chars, size, position))return false;
 				asize = data;
 			}
-			(*position) += sizeof(short);
 			goto table_shared_code;
 		case SERIALIZED_TABLE_SIZE32:
 			(*position)++;
@@ -1739,22 +1870,23 @@ bool orcus_deserialize_variable(orcus_variable* out,const unsigned char* chars,c
 				if (!deserial_read_var_32(&data, chars, size, position))return false;
 				asize = data;
 			}
-			(*position) += sizeof(int);
 			goto table_shared_code;
 		case SERIALIZED_TABLE_SIZE64:
 			(*position)++;
 			if (!deserial_read_var_64(&asize, chars, size, position))return false;
-			(*position) += sizeof(uint64_t);
+
 			table_shared_code:
 
 			orcus_table* arr = orcus_newtable();
 			if (!arr)return false;
-			
+			out->type = ORCUS_TYPE_TABLE;
+			out->data.p = arr;
+
 			while (asize) {
 				orcus_variable key;
 				orcus_variable value;
-				if (!orcus_deserialize_variable(&key, chars, size, position))return false;
-				if (!orcus_deserialize_variable(&value, chars, size, position)) {
+				if (!orcus_deserialize_variable(&key, chars, size, position, storedvars, num_stored_vars))return false;
+				if (!orcus_deserialize_variable(&value, chars, size, position, storedvars, num_stored_vars)) {
 					orcus_release_var(&key);
 					return false;
 				};
@@ -1765,9 +1897,58 @@ bool orcus_deserialize_variable(orcus_variable* out,const unsigned char* chars,c
 				}
 				asize--;
 			}
-			out->type = ORCUS_TYPE_TABLE;
-			out->data.p = arr;
+			
 		}	
+			return true;
+		case SERIALIZED_PREP_FWD_REF:
+			{
+			(*position)++;
+			if ( ((*num_stored_vars) % 0xFF) == 0) {
+				orcus_variable* nptr = (orcus_variable*)realloc(*storedvars, sizeof(orcus_variable) * ((*num_stored_vars) + 0xFF));
+				if (!nptr)return false;
+				*storedvars = nptr;
+			}
+			orcus_uint storage_point = *num_stored_vars;
+			(*num_stored_vars)++;
+			orcus_variable tempdata;
+			bool result= orcus_deserialize_variable( (*storedvars)+ storage_point, chars, size, position, storedvars, num_stored_vars);
+			//(*storedvars)[(*num_stored_vars) - 1] = tempdata;
+			*out = *((*storedvars) + storage_point);
+			return result;
+			}
+			{
+				orcus_uint var_index;
+		case SERIALIZED_READ_FWD_REF8:
+			(*position)++;
+			var_index = (orcus_int)chars[*position];
+			(*position)++;
+			goto read_forward_var;
+		case SERIALIZED_READ_FWD_REF16:
+			(*position)++;
+			{
+				unsigned short d;
+				if (!deserial_read_var_16(&d, chars, size, position))return false;
+				var_index = d;
+			}
+			goto read_forward_var;
+		case SERIALIZED_READ_FWD_REF32:
+			(*position)++;
+			{
+				unsigned int d;
+				if (!deserial_read_var_32(&d, chars, size, position))return false;
+				var_index = d;
+			}
+			goto read_forward_var;
+		case SERIALIZED_READ_FWD_REF64:
+			(*position)++;
+			{
+				uint64_t d;
+				if (!deserial_read_var_64(&d, chars, size, position))return false;
+				var_index = d;
+			}
+			read_forward_var:
+			*out = (*storedvars)[var_index];
+			}
 			return true;
 		default:
 			return false;
@@ -1800,12 +1981,16 @@ void orcus_lib_io_deserialize(orcus_state* const ORCUS_CPP_restrict M, const orc
 	orcus_int pos = 0;
 	orcus_string* str = (orcus_string*)in.data.p;
 
-	if (!orcus_deserialize_variable(&out, (unsigned char*)str->ptr, str->size, &pos)) {
+	orcus_variable* var_storage=nullptr;
+	orcus_uint num_var_stored = 0;
+
+	if (!orcus_deserialize_variable(&out, (unsigned char*)str->ptr, str->size, &pos,&var_storage,&num_var_stored)) {
 		orcus_release_var(&out);
 		out.data.i = 0;
 		out.type = ORCUS_TYPE_NIL;
 	}
 
+	free(var_storage);
 
 	orcus_release_var(&in);
 	orcus_pushstack(M, &out);
