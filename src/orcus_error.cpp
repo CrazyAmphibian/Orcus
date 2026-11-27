@@ -46,7 +46,7 @@ orcus_string* orcus_get_state_traceback(orcus_state* M) {
 		}
 		memset(prepend, NULL, sizeof(orcus_string));
 
-		if (M->bytecode->instruction_dbg_lookup) {
+		if (M->bytecode && M->bytecode->instruction_dbg_lookup) {
 			orcus_uint dbg_tok_num = M->bytecode->instruction_dbg_lookup[M->programcounter - 1];
 			orcus_debug_token T, T_n, T_p;
 			bool next = false;
@@ -252,7 +252,7 @@ void orcus_raise_error(orcus_state* M, const uint32_t errorcode, const orcus_int
 
 	while (M) {
 		M->errorcode = errorcode;
-		M->programcounter = M->bytecode->numberofinstructions; //push to end to stop execution
+		if(M->bytecode)M->programcounter = M->bytecode->numberofinstructions; //push to end to stop execution
 		M = M->parentstate;
 	}
 }

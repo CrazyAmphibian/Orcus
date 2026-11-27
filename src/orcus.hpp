@@ -227,6 +227,8 @@ struct orcus_state {
 
 };
 
+typedef void (*orcus_cfunc) (orcus_state* const ORCUS_CPP_restrict M, const orcus_int args_in, const orcus_int args_out);
+
 
 struct orcus_threadholder {
 	orcus_uint references = 0;
@@ -238,10 +240,10 @@ struct orcus_threadholder {
 	pthread_t threadobject = NULL;
 #endif
 	orcus_state* state = nullptr; //that's right, it carries an enviroment with it. very hilarious, obviously.
+	orcus_cfunc cfunction = nullptr;
 };
 
 
-typedef void (*orcus_cfunc) (orcus_state* const ORCUS_CPP_restrict M, const orcus_int args_in, const orcus_int args_out);
 
 //type defenitions
 extern uint8_t ORCUS_NUMBER_OF_TYPES;

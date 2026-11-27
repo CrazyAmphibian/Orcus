@@ -19,32 +19,39 @@ DWORD WINAPI threadfunction(LPVOID param) {
 	if (!param)return 0;
 	orcus_threadholder* threadvar= (orcus_threadholder*)param;
 
-	while(orcus_stepstate(threadvar->state));
+	if (threadvar->cfunction) {
+		threadvar->cfunction(threadvar->state,threadvar->state->sizeofstack,1);
+	}
+	else {
+		while (orcus_stepstate(threadvar->state));
+	}
 
 	if (threadvar->state->errorcode) { //clear stack on error to prevent drawing of args that shouldn't be drawn.
 		while (threadvar->state->sizeofstack) {
-			orcus_variable v;
-			orcus_popstack(threadvar->state, &v);
-			orcus_release_var(&v);
+			orcus_discard_top_of_stack(threadvar->state);
 		}
 	}
 
 	threadvar->finished = true;
 	return 0;
 }
+
 #else
 void* threadfunction(void* param) {
 	if (!param)return nullptr;
 	orcus_threadholder* threadvar = (orcus_threadholder*)param;
 
-	while (orcus_stepstate(threadvar->state));
+	if (threadvar->cfunction) {
+		threadvar->cfunction(threadvar->state, threadvar->state->sizeofstack, 1);
+	}
+	else {
+		while (orcus_stepstate(threadvar->state));
+	}
 
-	if (threadvar->state->errorcode) {
+	if (threadvar->state->errorcode) { //clear stack on error to prevent drawing of args that shouldn't be drawn.
 		while (threadvar->state->sizeofstack) {
-			orcus_variable v;
-			orcus_popstack(threadvar->state, &v);
-			orcus_release_var(&v);
-}
+			orcus_discard_top_of_stack(threadvar->state);
+		}
 	}
 
 	threadvar->finished = true;
@@ -95,9 +102,9 @@ void orcus_lib_thread_new(orcus_state* const ORCUS_CPP_restrict M, const orcus_i
 	}
 
 
-	if ( func_var.type != ORCUS_TYPE_FUNCTION) {
+	if ( func_var.type != ORCUS_TYPE_FUNCTION && func_var.type != ORCUS_TYPE_CFUNC) {
 		free(vart);
-		orcus_raise_error_firstargpointeronly(M, ORCUS_ERROR_WRONG_TYPE_VARIABLEPROVIDED, &func_var, ORCUS_TYPE_FUNCTION, 1);
+		orcus_raise_error_firstargpointeronly(M, ORCUS_ERROR_WRONG_TYPE_EXPECTS_ANY_FUNCTION_VARIABLEPROVIDED, &func_var, 1);
 		orcus_release_var(&func_var);
 		return;
 	}
@@ -139,24 +146,37 @@ void orcus_lib_thread_new(orcus_state* const ORCUS_CPP_restrict M, const orcus_i
 	out.type = ORCUS_TYPE_NIL;
 	
 	if (t->state) {
-		//t->state->bytecode.numberofinstructions = ((orcus_function*)func_var.data.p)->numberofinstructions;
-		//t->state->bytecode.instructions = ((orcus_function*)func_var.data.p)->instructions;
-		t->state->bytecode=(orcus_function*)malloc(sizeof(orcus_function));
-		if (!t->state->bytecode) {
-			orcus_destroystate(t->state);
-			orcus_raise_error(M, ORCUS_ERROR_ALLOCATION);
-			return;
+		
+		if (func_var.type == ORCUS_TYPE_FUNCTION) {
+			t->cfunction = nullptr;
+			t->state->bytecode = (orcus_function*)malloc(sizeof(orcus_function));
+			if (!t->state->bytecode) {
+				orcus_destroystate(t->state);
+				orcus_raise_error(M, ORCUS_ERROR_ALLOCATION);
+				return;
+			}
+			orcus_clone_function((orcus_function*)func_var.data.p, t->state->bytecode);
+			if (((orcus_function*)func_var.data.p)->numberofinstructions != t->state->bytecode->numberofinstructions) {
+				orcus_raise_error(M, ORCUS_ERROR_ALLOCATION);
+				ORCUS_CFUNCTION_ENSURE_CORRECT_NUMBER_OUTPUT_ARGS(M, args_out);
+				return;
+			}
+			t->state->bytecode->references = 1;
 		}
-		orcus_clone_function((orcus_function*)func_var.data.p,t->state->bytecode);
-		if (((orcus_function*)func_var.data.p)->numberofinstructions != t->state->bytecode->numberofinstructions) {
-			orcus_raise_error(M, ORCUS_ERROR_ALLOCATION);
-			ORCUS_CFUNCTION_ENSURE_CORRECT_NUMBER_OUTPUT_ARGS(M, args_out);
-			return;
+		else { //C function
+			t->cfunction = (orcus_cfunc)func_var.data.p;
 		}
-		t->state->bytecode->references = 1;
+
 		if (vart) {
-			for (orcus_int i = 0; i < args_in - 2; i++) {
-				orcus_pushstack(t->state, vart+i);
+			if (func_var.type == ORCUS_TYPE_FUNCTION) {
+				for (orcus_int i = 0; i < args_in - 2; i++) {
+					orcus_pushstack(t->state, vart + i);
+				}
+			}
+			else {//C function
+				for (orcus_int i = args_in - 2-1;i>=0; i--) {
+					orcus_pushstack(t->state, vart + i);
+				}
 			}
 			free(vart);
 			vart = nullptr;

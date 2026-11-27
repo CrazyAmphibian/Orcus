@@ -1258,6 +1258,13 @@ orcus_string* orcus_tostring(const orcus_variable* const ORCUS_CPP_restrict var)
 		}
 		tstr = orcus_cstring_to_mstring(tout, strlen(tout));
 		break;
+	case ORCUS_TYPE_THREAD:
+		tint = snprintf(tout, sizeof(tout), "thread %p", var->data.p);
+		if (tint == -1) {
+			return nullptr;
+		}
+		tstr = orcus_cstring_to_mstring(tout, strlen(tout));
+		break;
 	default:
 		tstr = orcus_cstring_const_to_mstring((char*)"unknown", 7);
 	}
