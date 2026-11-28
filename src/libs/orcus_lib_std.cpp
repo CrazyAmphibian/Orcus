@@ -252,11 +252,8 @@ TODO:
 get return args
 */
 void orcus_lib_std_restricted_call(orcus_state* const ORCUS_CPP_restrict M, const orcus_int args_in, const orcus_int args_out) {
-	if (args_in < 2) {
-		orcus_raise_error_nonpointer(M,ORCUS_ERROR_NOT_ENOUGH_ARGS, args_in,2);
-		return;
-	}
-	orcus_variable* argt = (orcus_variable*)malloc(sizeof(orcus_variable) * (args_in - 2));
+	orcus_variable* argt=nullptr;
+	if(args_in > 2)argt = (orcus_variable*)malloc(sizeof(orcus_variable) * (args_in - 2));
 	if (!argt && args_in>2) {
 		orcus_raise_error(M, ORCUS_ERROR_ALLOCATION);
 		return;
@@ -266,11 +263,12 @@ void orcus_lib_std_restricted_call(orcus_state* const ORCUS_CPP_restrict M, cons
 	}
 
 	orcus_variable tab;
-	orcus_popstack(M,&tab);
+	tab.type = ORCUS_TYPE_NIL;
+	if(args_in>=2)orcus_popstack(M,&tab);
 	orcus_variable func;
 	orcus_popstack(M,&func);
 
-	if (tab.type != ORCUS_TYPE_TABLE) {
+	if (tab.type && tab.type != ORCUS_TYPE_TABLE) {
 		orcus_raise_error_firstargpointeronly(M, ORCUS_ERROR_WRONG_TYPE_VARIABLEPROVIDED, &tab, ORCUS_TYPE_TABLE, 2);
 		orcus_release_var(&tab);
 		free(argt);
@@ -297,10 +295,13 @@ void orcus_lib_std_restricted_call(orcus_state* const ORCUS_CPP_restrict M, cons
 	orcus_function* oldfunc = iso_M->bytecode;
 	orcus_state* oldmaster = iso_M->masterstate;
 	orcus_state* oldparent = iso_M->parentstate;
-	iso_M->masterstate=iso_M;
-	iso_M->parentstate = nullptr;
 
-	iso_M->enviroment = (orcus_table*)tab.data.p;
+	if (tab.type) {
+		iso_M->masterstate = iso_M;
+		iso_M->parentstate = nullptr;
+
+		iso_M->enviroment = (orcus_table*)tab.data.p;
+	}
 	for (orcus_int i = 0; i < args_in - 2; i++) {
 		orcus_pushstack(iso_M, argt+i);
 	}
@@ -311,12 +312,13 @@ void orcus_lib_std_restricted_call(orcus_state* const ORCUS_CPP_restrict M, cons
 	orcus_variable out;
 	out.type = ORCUS_TYPE_BOOL;
 	out.data.i = 1;
-	orcus_int args_sent_out = 0;
+	
 	if (func.type == ORCUS_TYPE_CFUNC) {
-		args_sent_out -= iso_M->sizeofstack;
-		((orcus_cfunc)func.data.p)(iso_M, args_in-2, args_out<0?-1:(args_out ? args_out-1 : 0) );
-		args_sent_out += iso_M->sizeofstack;
-		if (args_sent_out < 0)args_sent_out = 0;
+		orcus_int args_call_in = args_in - 2;
+		if (args_call_in < 0)args_call_in = 0;
+		((orcus_cfunc)func.data.p)(iso_M, args_call_in, args_out<0?-1:(args_out ? args_out-1 : 0) );
+		
+		
 	}
 	else {
 		while (orcus_stepstate(iso_M));
