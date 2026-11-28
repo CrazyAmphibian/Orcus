@@ -160,7 +160,7 @@ void orcus_lib_table_getkeys(orcus_state* const ORCUS_CPP_restrict M, const orcu
 	out.type = ORCUS_TYPE_ARRAY;
 	out.data.p = arr;
 	orcus_pushstack(M, &out);
-	if (args_out > 1) {
+	if (args_out > 1 || args_out < 0) {
 		out.type = ORCUS_TYPE_INT;
 		out.data.i = counter;
 		orcus_pushstack(M, &out);
@@ -213,7 +213,7 @@ void orcus_lib_table_getvalues(orcus_state* const ORCUS_CPP_restrict M, const or
 	out.type = ORCUS_TYPE_ARRAY;
 	out.data.p = arr;
 	orcus_pushstack(M, &out);
-	if (args_out > 1) {
+	if (args_out > 1 || args_out < 0) {
 		out.type = ORCUS_TYPE_INT;
 		out.data.i = counter;
 		orcus_pushstack(M, &out);
@@ -249,9 +249,10 @@ void orcus_lib_table_haskey(orcus_state* const ORCUS_CPP_restrict M, const orcus
 				out.type = ORCUS_TYPE_BOOL;
 				out.data.i = 1;
 				orcus_pushstack(M, &out);
-				if (args_out > 1) {
+				if (args_out > 1 || args_out < 0) {
 					orcus_pushstack(M, st.values+i);
 				}
+				ORCUS_CFUNCTION_ENSURE_CORRECT_NUMBER_OUTPUT_ARGS(M, args_out, 2);
 				return;
 			}
 		}
@@ -260,7 +261,7 @@ void orcus_lib_table_haskey(orcus_state* const ORCUS_CPP_restrict M, const orcus
 	out.type = ORCUS_TYPE_BOOL;
 	out.data.i = 0;
 	orcus_pushstack(M, &out);
-	if (args_out > 1) {
+	if (args_out > 1 || args_out < 0) {
 		out.type = ORCUS_TYPE_NIL;
 		orcus_pushstack(M, &out);
 	}
@@ -294,9 +295,10 @@ void orcus_lib_table_hasvalue(orcus_state* const ORCUS_CPP_restrict M, const orc
 				out.type = ORCUS_TYPE_BOOL;
 				out.data.i = 1;
 				orcus_pushstack(M, &out);
-				if (args_out > 1) {
+				if (args_out > 1 || args_out < 0) {
 					orcus_pushstack(M, st.keys + i);
 				}
+				ORCUS_CFUNCTION_ENSURE_CORRECT_NUMBER_OUTPUT_ARGS(M, args_out, 2);
 				return;
 			}
 		}
@@ -305,7 +307,7 @@ void orcus_lib_table_hasvalue(orcus_state* const ORCUS_CPP_restrict M, const orc
 	out.type = ORCUS_TYPE_BOOL;
 	out.data.i = 0;
 	orcus_pushstack(M, &out);
-	if (args_out > 1) {
+	if (args_out > 1 || args_out < 0) {
 		out.type = ORCUS_TYPE_NIL;
 		orcus_pushstack(M, &out);
 	}
@@ -351,7 +353,7 @@ void orcus_lib_table_keyswithvalue(orcus_state* const ORCUS_CPP_restrict M, cons
 	out.type = ORCUS_TYPE_ARRAY;
 	out.data.p = arr;
 	orcus_pushstack(M, &out);
-	if (args_out > 1) {
+	if (args_out > 1 || args_out < 0) {
 		out.type = ORCUS_TYPE_INT;
 		out.data.i = elements;
 		orcus_pushstack(M, &out);

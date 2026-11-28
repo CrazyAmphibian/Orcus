@@ -311,8 +311,12 @@ void orcus_lib_std_restricted_call(orcus_state* const ORCUS_CPP_restrict M, cons
 	orcus_variable out;
 	out.type = ORCUS_TYPE_BOOL;
 	out.data.i = 1;
+	orcus_int args_sent_out = 0;
 	if (func.type == ORCUS_TYPE_CFUNC) {
-		((orcus_cfunc)func.data.p)(iso_M, args_in-2, args_out ? args_out-1 : 0);
+		args_sent_out -= iso_M->sizeofstack;
+		((orcus_cfunc)func.data.p)(iso_M, args_in-2, args_out<0?-1:(args_out ? args_out-1 : 0) );
+		args_sent_out += iso_M->sizeofstack;
+		if (args_sent_out < 0)args_sent_out = 0;
 	}
 	else {
 		while (orcus_stepstate(iso_M));
@@ -325,9 +329,17 @@ void orcus_lib_std_restricted_call(orcus_state* const ORCUS_CPP_restrict M, cons
 	}
 
 	if (out.data.i) {
-		for (orcus_int i = 1; i < args_out; i++) {
-			orcus_pullstack(iso_M, &out);
-			orcus_pushstack(M, &out);
+		if (args_out > 0) {
+			for (orcus_int i = 1; i < args_out; i++) {
+				orcus_pullstack(iso_M, &out);
+				orcus_pushstack(M, &out);
+			}
+		}
+		else if(args_out<0){ //variadic mode
+			while (iso_M->sizeofstack) {
+				orcus_pullstack(iso_M, &out);
+				orcus_pushstack(M, &out);
+			}
 		}
 	}
 	else {

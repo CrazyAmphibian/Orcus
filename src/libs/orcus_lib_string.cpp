@@ -168,7 +168,7 @@ void orcus_lib_string_find(orcus_state* const ORCUS_CPP_restrict M, const orcus_
 	if(args_out)orcus_pushstack(M, &out);
 	
 	//second one is end char.
-	if (args_out > 1) {
+	if (args_out > 1 || args_out<0) {
 		orcus_variable out2;
 		
 
@@ -313,7 +313,7 @@ void orcus_lib_string_replace(orcus_state* const ORCUS_CPP_restrict M, const orc
 
 	orcus_pushstack(M,&out);
 
-	if (args_out > 1) {
+	if (args_out > 1 || args_out < 0) {
 		orcus_variable out2;
 		
 		out2.type = ORCUS_TYPE_INT;
@@ -1622,7 +1622,7 @@ void orcus_lib_string_p_find(orcus_state* const ORCUS_CPP_restrict M, const orcu
 	}
 
 	orcus_pushstack(M, &searchforvar);
-	if (args_out > 1) {
+	if (args_out > 1 || args_out < 0) {
 		orcus_pushstack(M, &strvar);
 	}
 
@@ -1788,8 +1788,13 @@ void orcus_lib_string_p_replace(orcus_state* const ORCUS_CPP_restrict M, const o
 	matchvar.type = ORCUS_TYPE_STRING;
 	matchvar.data.p = outstr;
 	orcus_pushstack(M, &matchvar);
+	if (args_out > 1 || args_out < 0) {
+		matchvar.type = ORCUS_TYPE_INT;
+		matchvar.data.i = count;
+		orcus_pushstack(M, &matchvar);
+	}
 
-	ORCUS_CFUNCTION_ENSURE_CORRECT_NUMBER_OUTPUT_ARGS(M, args_out, 1);
+	ORCUS_CFUNCTION_ENSURE_CORRECT_NUMBER_OUTPUT_ARGS(M, args_out, 2);
 }
 
 
