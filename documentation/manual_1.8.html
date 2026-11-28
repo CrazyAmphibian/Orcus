@@ -33,7 +33,7 @@
 </div>
 
 <div>
-	<h3 class="function"> <span class="type">thread</span>|<span class="type">nil</span> new ( <span class="type">function</span> function, <span class="optional">[<span class="type">table</span> enviroment=_ENV]</span>, <span class="type">variable</span> ... )</h3>
+	<h3 class="function"> <span class="type">thread</span>|<span class="type">nil</span> new ( <span class="type">callable</span> function, <span class="optional">[<span class="type">table</span> enviroment=_ENV]</span>, <span class="type">variable</span> ... )</h3>
 	
 	<p>
 		creates a new thread with a given function, and immedietly begins execution. caution is advised when multithreading, as no safeguards are put in place to prevent data races.<br>
