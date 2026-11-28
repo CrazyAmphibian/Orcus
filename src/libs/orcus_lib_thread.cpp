@@ -20,7 +20,7 @@ DWORD WINAPI threadfunction(LPVOID param) {
 	orcus_threadholder* threadvar= (orcus_threadholder*)param;
 
 	if (threadvar->cfunction) {
-		threadvar->cfunction(threadvar->state,threadvar->state->sizeofstack,1);
+		threadvar->cfunction(threadvar->state,threadvar->state->sizeofstack,-1);
 	}
 	else {
 		while (orcus_stepstate(threadvar->state));
