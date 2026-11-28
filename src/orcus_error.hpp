@@ -61,6 +61,7 @@ inline bool ORCUS_CFUNCTION_ENSURE_CORRECT_NUMBER_INPUT_ARGS(orcus_state* const 
 
 //pretty simple will output any args that haven't been outputted. is nil.
 inline bool ORCUS_CFUNCTION_ENSURE_CORRECT_NUMBER_OUTPUT_ARGS(orcus_state* const ORCUS_CPP_restrict M, const orcus_int args_out, const orcus_int sent_args=0) {
+	if (args_out <= 0)return true;
 	orcus_int diff = args_out - sent_args;
 	if (diff > 0) {
 		if (M->allocatedstacksize < M->sizeofstack + diff) {

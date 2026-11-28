@@ -19,19 +19,33 @@ DWORD WINAPI threadfunction(LPVOID param) {
 	if (!param)return 0;
 	orcus_threadholder* threadvar= (orcus_threadholder*)param;
 
-	if (threadvar->cfunction) {
-		threadvar->cfunction(threadvar->state,threadvar->state->sizeofstack,-1);
-	}
-	else {
-		while (orcus_stepstate(threadvar->state));
-	}
+	orcus_int num_start_args = threadvar->state->sizeofstack;
+	orcus_variable* start_args = (orcus_variable*)malloc(sizeof(orcus_variable) * num_start_args);
+	if (start_args) {
+		memcpy(start_args, threadvar->state->stack, sizeof(orcus_variable) * num_start_args);//copy initial stack
+		if (threadvar->cfunction) {
+			threadvar->cfunction(threadvar->state, threadvar->state->sizeofstack, -1);
+		}
+		else {
+			while (orcus_stepstate(threadvar->state));
+		}
 
-	if (threadvar->state->errorcode) { //clear stack on error to prevent drawing of args that shouldn't be drawn.
-		while (threadvar->state->sizeofstack) {
-			orcus_discard_top_of_stack(threadvar->state);
+		//because we increment the ref count before opening the thread, the thread must then decrement, and check for a free
+		for (orcus_int n = 0; n < num_start_args; n++) {
+			orcus_decrement_variable_refrence_count(start_args + n);
+			orcus_release_var(start_args + n);
+		}
+		free(start_args);
+
+		if (threadvar->state->errorcode) { //clear stack on error to prevent drawing of args that shouldn't be drawn.
+			while (threadvar->state->sizeofstack) {
+				orcus_discard_top_of_stack(threadvar->state);
+			}
 		}
 	}
-
+	else {
+		orcus_raise_error(threadvar->state, ORCUS_ERROR_ALLOCATION);
+	}
 	threadvar->finished = true;
 	return 0;
 }
@@ -170,11 +184,13 @@ void orcus_lib_thread_new(orcus_state* const ORCUS_CPP_restrict M, const orcus_i
 		if (vart) {
 			if (func_var.type == ORCUS_TYPE_FUNCTION) {
 				for (orcus_int i = 0; i < args_in - 2; i++) {
+					orcus_increment_variable_refrence_count(vart + i); //increment ref count to prevent the variable being freed while the thread is using it, if this current state undergoes a closure.
 					orcus_pushstack(t->state, vart + i);
 				}
 			}
-			else {//C function
+			else {//C function. reverse order.
 				for (orcus_int i = args_in - 2-1;i>=0; i--) {
+					orcus_increment_variable_refrence_count(vart + i);
 					orcus_pushstack(t->state, vart + i);
 				}
 			}
