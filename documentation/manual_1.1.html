@@ -75,9 +75,10 @@
 <br>
 
 <div>
-	<h3 class="function"><span class="type">bool</span>, <span class="type">...</span> rcall  (<span class="type">callable</span> function, <span class="type">table</span> enviroment, <span class="type">variable</span> ...)</h3>
+	<h3 class="function"><span class="type">bool</span>, <span class="type">...</span> rcall  (<span class="type">callable</span> function, <span class="optional">[<span class="type">table</span> enviroment=_ENV]</span>, <span class="type">variable</span> ...)</h3>
 	<p>
 		takes a function and calls it with a restricted environment given by a table.<br/>
+		if nil is given, or no second arg is provided, the current calling enviroment will be used instead.<br>
 		the function will run its code as normal, but will not have access to any variables that were not supplied in the table.<br/>
 		additionally, any errors thrown in the restricted environment will not propagate to the calling state.<br>
 		any number of args can be sent to the function. <br>
